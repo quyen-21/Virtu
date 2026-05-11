@@ -2,6 +2,9 @@ from fastapi import FastAPI, Form, UploadFile, File
 from typing import Dict, Any, Optional
 import json
 
+from fastapi.responses import JSONResponse
+import traceback
+
 from inference import finalize_layout
 
 app = FastAPI(title="VirtuSpace AI Layout Service", version="1.0.0")
@@ -16,6 +19,18 @@ def health():
 def generate_layout(payload: Dict[str, Any]):
     return finalize_layout(payload)
 
+@app.post("/api/ai/layout/generate-debug")
+def generate_layout_debug(payload: Dict[str, Any]):
+    try:
+        return finalize_layout(payload)
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
+        )
 
 @app.post("/api/ai/layout/generate-from-recommendation")
 def generate_layout_from_recommendation(payload: Dict[str, Any]):
