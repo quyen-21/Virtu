@@ -1,0 +1,30 @@
+{
+  "cat_features": [
+    "room_type",
+    "style",
+    "source_dataset"
+  ],
+  "num_features": [
+    "num_items",
+    "num_floor_items",
+    "num_wall_items",
+    "num_support_required_items",
+    "num_supporters",
+    "num_groups",
+    "area_ratio_total",
+    "largest_item_area_ratio",
+    "room_density_score",
+    "has_primary_anchor_item",
+    "has_seating_group",
+    "has_sleeping_group",
+    "has_dining_group",
+    "has_work_group",
+    "pair_compatibility_score",
+    "group_completeness_score",
+    "support_capacity_gap",
+    "near_pairs",
+    "same_group_pairs",
+    "facing_pairs"
+  ],
+  "target": "label_set_keep"
+}

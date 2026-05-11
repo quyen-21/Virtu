@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pandas
+numpy
+scikit-learn==1.6.1
+joblib
+torch
+torchvision
+torchaudio
+python-multipart
+shapely
+pybullet
