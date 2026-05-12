@@ -133,27 +133,180 @@ def score_be_candidates(payload):
     infer_df["final_score"] = 0.60 * infer_df["keep_probability"] + 0.20 * infer_df["ranking_score"] + 0.10 * infer_df["style_score"] + 0.10 * infer_df["color_score"]
     return infer_df.sort_values("final_score", ascending=False).reset_index(drop=True)
 
+def get_density_from_payload(payload):
+    room = payload.get("room", {}) or {}
+    return canonical_text(
+        payload.get("furnitureDensity")
+        or payload.get("furniture_density")
+        or room.get("furnitureDensity")
+        or room.get("furniture_density")
+        or room.get("density")
+        or "medium"
+    )
+
+
+def allowed_categories_for_room(room_type):
+    if room_type == "living_room":
+        return {"sofa", "coffee_table", "tv_stand", "armchair", "side_table", "rug", "lamp", "plant", "wall_art"}
+    if room_type == "bedroom":
+        return {"bed", "nightstand", "wardrobe", "cabinet", "desk", "chair", "rug", "lamp", "plant", "mirror"}
+    if room_type == "dining_room":
+        return {"dining_table", "dining_chair", "cabinet", "rug", "lamp", "plant"}
+    if room_type == "office":
+        return {"desk", "office_chair", "bookshelf", "cabinet", "rug", "lamp", "plant"}
+    return set(CATEGORY_ALIAS.values()) | {"coffee_table", "side_table", "tv_stand"}
+
+
+def category_priority_for_room(room_type):
+    if room_type == "living_room":
+        return ["sofa", "coffee_table", "tv_stand", "armchair", "side_table", "rug", "lamp", "plant", "wall_art"]
+    if room_type == "bedroom":
+        return ["bed", "nightstand", "wardrobe", "desk", "chair", "rug", "lamp", "plant", "mirror"]
+    if room_type == "dining_room":
+        return ["dining_table", "dining_chair", "cabinet", "rug", "lamp", "plant"]
+    if room_type == "office":
+        return ["desk", "office_chair", "bookshelf", "cabinet", "rug", "lamp", "plant"]
+    return ["sofa", "coffee_table", "tv_stand", "armchair", "side_table", "rug", "lamp"]
+
+
+def quota_for_layout(room_type, density):
+    sparse = "sparse" in density or "thua" in density
+    dense = "dense" in density or "day" in density
+
+    if room_type == "living_room":
+        return {
+            "sofa": 1,
+            "coffee_table": 1,
+            "tv_stand": 1,
+            "armchair": 1 if sparse else (3 if dense else 2),
+            "side_table": 1 if sparse else 2,
+            "rug": 0 if sparse else 1,
+            "lamp": 1,
+            "plant": 0 if sparse else 1,
+            "wall_art": 0 if sparse else 1,
+        }
+
+    if room_type == "bedroom":
+        return {
+            "bed": 1,
+            "nightstand": 1 if sparse else 2,
+            "wardrobe": 1,
+            "cabinet": 1 if dense else 0,
+            "desk": 1 if not sparse else 0,
+            "chair": 1 if not sparse else 0,
+            "rug": 0 if sparse else 1,
+            "lamp": 1,
+        }
+
+    return {
+        "sofa": 1, "coffee_table": 1, "tv_stand": 1,
+        "armchair": 1 if sparse else 2,
+        "side_table": 1, "rug": 0 if sparse else 1, "lamp": 1,
+    }
+
+
+def effective_top_k(payload, requested_top_k, quota):
+    density = get_density_from_payload(payload)
+    sparse = "sparse" in density or "thua" in density
+    dense = "dense" in density or "day" in density
+
+    if sparse:
+        density_cap = 4
+    elif dense:
+        density_cap = 8
+    else:
+        density_cap = 6
+
+    quota_cap = sum(max(0, int(v)) for v in quota.values())
+    return max(1, min(int(requested_top_k), density_cap, quota_cap))
+
+
+def reject_row(row, reason):
+    return {
+        "productId": row["product_id"],
+        "name": row["name"],
+        "category": row["category"],
+        "reason": reason,
+        "keepProbability": float(row["keep_probability"]),
+    }
+
+
 def select_products_for_layout(payload, top_k=8, threshold=None):
-    if threshold is None: threshold = float(filter_config.get("recommended_threshold", 0.5))
+    if threshold is None:
+        threshold = float(filter_config.get("recommended_threshold", 0.5))
+
     scored = score_be_candidates(payload)
-    if len(scored) == 0: return [], []
-    selected, rejected, used_categories = [], [], set()
+    if len(scored) == 0:
+        return [], []
+
+    room = payload.get("room", {}) or {}
+    room_type = canonical_room_type(room.get("type", "unknown"))
+    density = get_density_from_payload(payload)
+    allowed = allowed_categories_for_room(room_type)
+    quota = quota_for_layout(room_type, density)
+    top_k = effective_top_k(payload, top_k, quota)
+    priority = category_priority_for_room(room_type)
+
+    # Loại category không hợp phòng trước. Ví dụ: nightstand không nên vào living_room.
+    rejected = []
+    valid_rows = []
     for _, row in scored.iterrows():
         rec = row.to_dict()
-        if float(rec["keep_probability"]) < float(threshold):
-            rejected.append({"productId": rec["product_id"], "name": rec["name"], "category": rec["category"], "reason": "low_keep_probability", "keepProbability": float(rec["keep_probability"])})
+        category = rec.get("category", "unknown")
+
+        if category not in allowed:
+            rejected.append(reject_row(rec, "category_not_allowed_for_room"))
             continue
-        if rec["category"] not in used_categories or len(selected) < min(3, top_k):
-            selected.append(rec); used_categories.add(rec["category"])
-        elif len(selected) < top_k:
+
+        if float(rec["keep_probability"]) < float(threshold):
+            rejected.append(reject_row(rec, "low_keep_probability"))
+            continue
+
+        valid_rows.append(rec)
+
+    selected = []
+    selected_ids = set()
+    selected_count_by_category = {}
+
+    # Chọn theo thứ tự ưu tiên category để sofa/bàn nước không bị armchair lấn hết slot.
+    for category in priority:
+        limit = int(quota.get(category, 0))
+        if limit <= 0:
+            continue
+
+        candidates = [r for r in valid_rows if r.get("category") == category and r.get("product_id") not in selected_ids]
+        candidates = sorted(candidates, key=lambda r: float(r.get("final_score", 0.0)), reverse=True)
+
+        for rec in candidates[:limit]:
+            if len(selected) >= top_k:
+                break
             selected.append(rec)
-        else:
-            rejected.append({"productId": rec["product_id"], "name": rec["name"], "category": rec["category"], "reason": "beyond_top_k", "keepProbability": float(rec["keep_probability"])})
-        if len(selected) >= top_k: break
-    selected_ids = {x["product_id"] for x in selected}
-    for _, row in scored.iterrows():
-        if row["product_id"] not in selected_ids and not any(r["productId"] == row["product_id"] for r in rejected):
-            rejected.append({"productId": row["product_id"], "name": row["name"], "category": row["category"], "reason": "not_selected", "keepProbability": float(row["keep_probability"])})
+            selected_ids.add(rec["product_id"])
+            selected_count_by_category[category] = selected_count_by_category.get(category, 0) + 1
+
+        if len(selected) >= top_k:
+            break
+
+    # Nếu còn slot, fill bằng sản phẩm hợp phòng nhưng vẫn không vượt quota.
+    if len(selected) < top_k:
+        for rec in valid_rows:
+            if rec["product_id"] in selected_ids:
+                continue
+            category = rec.get("category")
+            if selected_count_by_category.get(category, 0) >= int(quota.get(category, 0)):
+                continue
+            selected.append(rec)
+            selected_ids.add(rec["product_id"])
+            selected_count_by_category[category] = selected_count_by_category.get(category, 0) + 1
+            if len(selected) >= top_k:
+                break
+
+    for rec in valid_rows:
+        if rec["product_id"] not in selected_ids and not any(r["productId"] == rec["product_id"] for r in rejected):
+            category = rec.get("category")
+            reason = "category_quota_exceeded" if selected_count_by_category.get(category, 0) >= int(quota.get(category, 0)) else "not_selected"
+            rejected.append(reject_row(rec, reason))
+
     return selected, rejected
 
 def predict_layout_for_selected(room, selected_products):
@@ -439,6 +592,15 @@ def finalize_layout(payload):
 
 ROOM_TYPE_ALIAS = {'living room': 'living_room', 'livingroom': 'living_room', 'phòng khách': 'living_room', 'bed room': 'bedroom', 'master bedroom': 'bedroom', 'kids room': 'bedroom', 'phòng ngủ': 'bedroom', 'dining room': 'dining_room', 'phòng ăn': 'dining_room', 'study room': 'office', 'office': 'office', 'phòng làm việc': 'office', 'kitchen': 'kitchen', 'phòng bếp': 'kitchen', 'bathroom': 'bathroom', 'phòng tắm': 'bathroom'}
 CATEGORY_ALIAS = {'sofa': 'sofa', 'sectional sofa': 'sofa', 'loveseat': 'sofa', 'couch': 'sofa', 'coffee table': 'coffee_table', 'tea table': 'coffee_table', 'side table': 'side_table', 'end table': 'side_table', 'nightstand': 'nightstand', 'bedside table': 'nightstand', 'tv stand': 'tv_stand', 'media console': 'tv_stand', 'armchair': 'armchair', 'lounge chair': 'armchair', 'recliner': 'armchair', 'chair': 'chair', 'dining chair': 'dining_chair', 'office chair': 'office_chair', 'desk': 'desk', 'dining table': 'dining_table', 'table': 'table', 'bed': 'bed', 'wardrobe': 'wardrobe', 'closet': 'wardrobe', 'cabinet': 'cabinet', 'bookshelf': 'bookshelf', 'shelf': 'bookshelf', 'drawer': 'drawer', 'dresser': 'dresser', 'rug': 'rug', 'carpet': 'rug', 'lamp': 'lamp', 'floor lamp': 'floor_lamp', 'ceiling lamp': 'ceiling_lamp', 'plant': 'plant', 'mirror': 'mirror', 'painting': 'wall_art', 'picture': 'wall_art', 'wall art': 'wall_art', 'wall decor': 'wall_art', 'stool': 'stool', 'bench': 'bench', 'ghế sofa': 'sofa', 'bàn nước': 'coffee_table', 'bàn trà': 'coffee_table', 'ghế thư giãn': 'armchair', 'ghế': 'chair', 'bàn đầu giường': 'nightstand', 'tủ tivi': 'tv_stand', 'bàn ăn': 'dining_table', 'ghế ăn': 'dining_chair', 'bàn làm việc': 'desk', 'ghế văn phòng': 'office_chair', 'giường': 'bed', 'tủ quần áo': 'wardrobe', 'thảm': 'rug', 'đèn': 'lamp', 'tranh': 'wall_art', 'kệ sách': 'bookshelf', 'tủ': 'cabinet', 'cây trang trí': 'plant', 'gương': 'mirror'}
+CATEGORY_ALIAS.update({
+    'bàn bên': 'side_table', 'ban ben': 'side_table',
+    'bàn cạnh': 'side_table', 'ban canh': 'side_table',
+    'kệ tivi': 'tv_stand', 'ke tivi': 'tv_stand', 'kệ tv': 'tv_stand', 'ke tv': 'tv_stand',
+    'bàn sofa': 'coffee_table', 'ban sofa': 'coffee_table',
+    'ghế đơn': 'armchair', 'ghe don': 'armchair',
+    'ghe sofa': 'sofa', 'ban nuoc': 'coffee_table', 'ban tra': 'coffee_table',
+    'ban dau giuong': 'nightstand', 'tu tivi': 'tv_stand', 'tham': 'rug', 'den': 'lamp',
+})
 WALL_FAVOR_CATEGORIES = {'wardrobe', 'bookshelf', 'cabinet', 'sofa', 'bed', 'desk', 'tv_stand'}
 SUPPORT_SURFACE_CATEGORIES = {'dining_table', 'cabinet', 'nightstand', 'desk', 'side_table', 'coffee_table'}
 TOP_SURFACE_DECOR_CATEGORIES = {'lamp', 'plant'}
