@@ -23,8 +23,13 @@ except Exception:
     pass
 
 def canonical_text(x):
-    if x is None: return ""
+    if x is None:
+        return ""
+    import unicodedata
     x = str(x).strip().lower()
+    # Chuẩn hoá tiếng Việt: "Bàn nước" và "ban nuoc" đều match được alias.
+    x = unicodedata.normalize("NFD", x)
+    x = "".join(ch for ch in x if unicodedata.category(ch) != "Mn")
     x = re.sub(r"[_\-]+", " ", x)
     x = re.sub(r"\s+", " ", x)
     return x
@@ -500,6 +505,66 @@ def apply_wall_priors(items, room):
             snap_to_wall(item, room); fixes += 1
     return fixes
 
+
+def apply_living_room_core_layout(items, room):
+    '''Rule hậu xử lý cho phòng khách. Không thay model, chỉ sửa bố cục cơ bản.'''
+    if canonical_room_type(room.get("type")) != "living_room":
+        return 0
+
+    fixes = 0
+    half_l = room["lengthM"] / 2.0
+
+    sofas = [x for x in items if x["category"] == "sofa" and x.get("layer", "floor") == "floor"]
+    coffee_tables = [x for x in items if x["category"] == "coffee_table" and x.get("layer", "floor") == "floor"]
+    tv_stands = [x for x in items if x["category"] == "tv_stand" and x.get("layer", "floor") == "floor"]
+    armchairs = [x for x in items if x["category"] == "armchair" and x.get("layer", "floor") == "floor"]
+    side_tables = [x for x in items if x["category"] == "side_table" and x.get("layer", "floor") == "floor"]
+
+    if sofas:
+        sofa = sofas[0]
+        sofa["x_m"] = 0.0
+        sofa["z_m"] = -half_l + sofa["item_depth_m"] / 2.0 + 0.12
+        sofa["rotation_y_deg"] = 0.0
+        sofa["anchor"] = "against_wall"
+        fixes += clamp_inside_room(sofa, room) + 1
+    else:
+        sofa = None
+
+    if sofa and coffee_tables:
+        table = coffee_tables[0]
+        table["x_m"] = sofa["x_m"]
+        table["z_m"] = sofa["z_m"] + sofa["item_depth_m"] / 2.0 + table["item_depth_m"] / 2.0 + 0.45
+        table["rotation_y_deg"] = 0.0
+        table["anchor"] = "near_sofa"
+        fixes += clamp_inside_room(table, room) + 1
+
+    if tv_stands:
+        tv = tv_stands[0]
+        tv["x_m"] = 0.0
+        tv["z_m"] = half_l - tv["item_depth_m"] / 2.0 - 0.10
+        tv["rotation_y_deg"] = 180.0
+        tv["anchor"] = "against_wall"
+        fixes += clamp_inside_room(tv, room) + 1
+
+    if sofa:
+        for idx, chair in enumerate(armchairs[:2]):
+            side = -1 if idx % 2 == 0 else 1
+            chair["x_m"] = side * min(1.45, room["widthM"] / 2.0 - chair["item_width_m"] / 2.0 - 0.25)
+            chair["z_m"] = sofa["z_m"] + sofa["item_depth_m"] + 0.55
+            chair["rotation_y_deg"] = 35.0 if side < 0 else -35.0
+            chair["anchor"] = "side_of_sofa"
+            fixes += clamp_inside_room(chair, room) + 1
+
+    if sofa and side_tables:
+        side_table = side_tables[0]
+        side_table["x_m"] = min(room["widthM"] / 2.0 - side_table["item_width_m"] / 2.0 - 0.15, sofa["item_width_m"] / 2.0 + side_table["item_width_m"] / 2.0 + 0.20)
+        side_table["z_m"] = sofa["z_m"]
+        side_table["rotation_y_deg"] = 0.0
+        side_table["anchor"] = "beside_sofa"
+        fixes += clamp_inside_room(side_table, room) + 1
+
+    return fixes
+
 def default_y_for_item(item):
     if item.get("layer") == "wall": return item.get("y_m", 1.5)
     if item.get("layer") == "top_surface": return item.get("y_m", item["item_height_m"] / 2.0)
@@ -553,6 +618,7 @@ def finalize_layout(payload):
         items.append(item)
 
     wall_prior_fixes = apply_wall_priors(items, room)
+    living_room_core_fixes = apply_living_room_core_layout(items, room)
     coffee_fixes = place_coffee_table_near_sofa(items, room)
     armchair_fixes = place_armchair_near_sofa(items, room)
     rug_fixes = place_rug_under_group(items, room)
@@ -583,6 +649,7 @@ def finalize_layout(payload):
         "metrics": {
             "selectedCount": len(final_output_items), "rejectedCount": len(rejected),
             "outOfRoomFixed": int(out_of_room_fixed), "wallPriorFixes": int(wall_prior_fixes),
+            "livingRoomCoreFixes": int(living_room_core_fixes),
             "coffeeTableFixes": int(coffee_fixes), "armchairFixes": int(armchair_fixes), "rugFixes": int(rug_fixes),
             "wallItemFixes": int(wall_item_fixes), "topSurfaceFixes": int(top_surface_fixes), "collisionsResolved": int(collision_fixes),
             "pybulletAvailable": bool(pybullet_ok), "pybulletNote": pybullet_note,
@@ -593,13 +660,12 @@ def finalize_layout(payload):
 ROOM_TYPE_ALIAS = {'living room': 'living_room', 'livingroom': 'living_room', 'phòng khách': 'living_room', 'bed room': 'bedroom', 'master bedroom': 'bedroom', 'kids room': 'bedroom', 'phòng ngủ': 'bedroom', 'dining room': 'dining_room', 'phòng ăn': 'dining_room', 'study room': 'office', 'office': 'office', 'phòng làm việc': 'office', 'kitchen': 'kitchen', 'phòng bếp': 'kitchen', 'bathroom': 'bathroom', 'phòng tắm': 'bathroom'}
 CATEGORY_ALIAS = {'sofa': 'sofa', 'sectional sofa': 'sofa', 'loveseat': 'sofa', 'couch': 'sofa', 'coffee table': 'coffee_table', 'tea table': 'coffee_table', 'side table': 'side_table', 'end table': 'side_table', 'nightstand': 'nightstand', 'bedside table': 'nightstand', 'tv stand': 'tv_stand', 'media console': 'tv_stand', 'armchair': 'armchair', 'lounge chair': 'armchair', 'recliner': 'armchair', 'chair': 'chair', 'dining chair': 'dining_chair', 'office chair': 'office_chair', 'desk': 'desk', 'dining table': 'dining_table', 'table': 'table', 'bed': 'bed', 'wardrobe': 'wardrobe', 'closet': 'wardrobe', 'cabinet': 'cabinet', 'bookshelf': 'bookshelf', 'shelf': 'bookshelf', 'drawer': 'drawer', 'dresser': 'dresser', 'rug': 'rug', 'carpet': 'rug', 'lamp': 'lamp', 'floor lamp': 'floor_lamp', 'ceiling lamp': 'ceiling_lamp', 'plant': 'plant', 'mirror': 'mirror', 'painting': 'wall_art', 'picture': 'wall_art', 'wall art': 'wall_art', 'wall decor': 'wall_art', 'stool': 'stool', 'bench': 'bench', 'ghế sofa': 'sofa', 'bàn nước': 'coffee_table', 'bàn trà': 'coffee_table', 'ghế thư giãn': 'armchair', 'ghế': 'chair', 'bàn đầu giường': 'nightstand', 'tủ tivi': 'tv_stand', 'bàn ăn': 'dining_table', 'ghế ăn': 'dining_chair', 'bàn làm việc': 'desk', 'ghế văn phòng': 'office_chair', 'giường': 'bed', 'tủ quần áo': 'wardrobe', 'thảm': 'rug', 'đèn': 'lamp', 'tranh': 'wall_art', 'kệ sách': 'bookshelf', 'tủ': 'cabinet', 'cây trang trí': 'plant', 'gương': 'mirror'}
 CATEGORY_ALIAS.update({
-    'bàn bên': 'side_table', 'ban ben': 'side_table',
-    'bàn cạnh': 'side_table', 'ban canh': 'side_table',
-    'kệ tivi': 'tv_stand', 'ke tivi': 'tv_stand', 'kệ tv': 'tv_stand', 'ke tv': 'tv_stand',
-    'bàn sofa': 'coffee_table', 'ban sofa': 'coffee_table',
-    'ghế đơn': 'armchair', 'ghe don': 'armchair',
-    'ghe sofa': 'sofa', 'ban nuoc': 'coffee_table', 'ban tra': 'coffee_table',
-    'ban dau giuong': 'nightstand', 'tu tivi': 'tv_stand', 'tham': 'rug', 'den': 'lamp',
+    'ban ben': 'side_table', 'ban canh': 'side_table', 'ban phu': 'side_table',
+    'ke tivi': 'tv_stand', 'ke tv': 'tv_stand', 'tu tivi': 'tv_stand', 'tu tv': 'tv_stand',
+    'ban nuoc': 'coffee_table', 'ban tra': 'coffee_table', 'ban sofa': 'coffee_table',
+    'ghe sofa': 'sofa', 'ghe don': 'armchair', 'ghe thu gian': 'armchair',
+    'ban dau giuong': 'nightstand', 'giuong': 'bed', 'tu quan ao': 'wardrobe',
+    'tham': 'rug', 'den': 'lamp', 'cay trang tri': 'plant', 'tranh': 'wall_art', 'guong': 'mirror',
 })
 WALL_FAVOR_CATEGORIES = {'wardrobe', 'bookshelf', 'cabinet', 'sofa', 'bed', 'desk', 'tv_stand'}
 SUPPORT_SURFACE_CATEGORIES = {'dining_table', 'cabinet', 'nightstand', 'desk', 'side_table', 'coffee_table'}

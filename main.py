@@ -76,8 +76,10 @@ async def recommend_compat(
         "recommendation": {
             "products": products
         },
-        "topK": 8,
-        "minScore": 0.50,
+        # Quan trọng: truyền density để inference.py áp quota sparse/medium/dense.
+        "furnitureDensity": furniture_density,
+        "topK": 4 if str(furniture_density).lower() == "sparse" else (8 if str(furniture_density).lower() == "dense" else 6),
+        "minScore": 0.20,
     }
 
     layout_result = finalize_layout(payload)
