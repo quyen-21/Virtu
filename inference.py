@@ -52,6 +52,182 @@ def cm_to_m(x):
     try: return float(x) / 100.0
     except: return 0.0
 
+
+def to_cm(value):
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except Exception:
+        return None
+    if v <= 0:
+        return None
+    # <= 5 thường là mét: 2.8 -> 280cm
+    if v <= 5:
+        return v * 100.0
+    # > 500 thường là mm: 1000 -> 100cm
+    if v > 500:
+        return v / 10.0
+    # mặc định coi là cm
+    return v
+
+
+def extract_length_from_name_cm(name):
+    text = canonical_text(name)
+
+    # Bắt dạng 2M8, 2m1, 1M6, 1m4...
+    m = re.search(r"(\d+)\s*m\s*(\d{1,2})", text)
+    if m:
+        whole = int(m.group(1))
+        decimal = int(m.group(2))
+        if decimal < 10:
+            return float(whole * 100 + decimal * 10)
+        return float(whole * 100 + decimal)
+
+    # Bắt dạng 120cm, 160 cm...
+    m = re.search(r"(\d{2,3})\s*cm", text)
+    if m:
+        return float(m.group(1))
+
+    # Bắt dạng Ø1000, D1000, O1000. Sau canonical_text thì Ø có thể còn nguyên hoặc thành o tùy môi trường.
+    m = re.search(r"[øod]\s*(\d{3,4})", text)
+    if m:
+        value = float(m.group(1))
+        return value / 10.0 if value > 500 else value
+
+    return None
+
+
+def normalize_product_dimensions_cm(product):
+    """Chuẩn hoá dimensions của sản phẩm về cm trước khi layout đổi sang mét.
+
+    Lý do: dữ liệu crawl có thể bị đảo width/depth hoặc thiếu chiều dài thật.
+    Ví dụ:
+    - Sofa Nest 3 Chỗ 2M8 có width=84, depth=84, height=40 nhưng tên cho biết chiều dài ~280cm.
+    - Sofa Combo 3 Chỗ 2M1 có width=86, depth=210, height=72 thì cần đảo thành width=210, depth=86.
+    """
+    name = product.get("name", "")
+    category = canonical_category(product.get("category", ""))
+    dims = product.get("dimensions") or {}
+    raw_dims = dict(dims) if isinstance(dims, dict) else {}
+
+    width = to_cm(raw_dims.get("width"))
+    depth = to_cm(raw_dims.get("depth"))
+    height = to_cm(raw_dims.get("height"))
+    name_length = extract_length_from_name_cm(name)
+    notes = []
+
+    if category == "sofa":
+        if name_length and 120 <= name_length <= 350:
+            width = name_length
+            notes.append("sofa_width_inferred_from_name")
+
+        if width and depth and depth > width and depth >= 120:
+            width, depth = depth, width
+            notes.append("swapped_width_depth")
+
+        if not width or width < 120 or width > 350:
+            notes.append("sofa_width_needs_review")
+
+        if not depth or depth < 65 or depth > 130:
+            depth = 90.0
+            notes.append("sofa_depth_defaulted")
+
+        if not height or height < 55 or height > 120:
+            height = 80.0
+            notes.append("sofa_height_defaulted")
+
+    elif category == "coffee_table":
+        if name_length and 40 <= name_length <= 160:
+            if not width or width < name_length:
+                width = name_length
+                notes.append("table_width_inferred_from_name")
+
+        if width and depth and depth > width and depth >= 80:
+            width, depth = depth, width
+            notes.append("table_swapped_width_depth")
+
+        if not width or width < 35 or width > 180:
+            width = 80.0
+            notes.append("table_width_defaulted")
+
+        if not depth or depth < 35 or depth > 160:
+            depth = min(width, 60.0)
+            notes.append("table_depth_defaulted")
+
+        if not height or height < 25 or height > 65:
+            height = 40.0
+            notes.append("table_height_defaulted")
+
+    elif category == "armchair":
+        if not width or width < 45 or width > 120:
+            width = 75.0
+            notes.append("armchair_width_defaulted")
+
+        if not depth or depth < 45 or depth > 140:
+            depth = 80.0
+            notes.append("armchair_depth_defaulted")
+
+        if not height or height < 55 or height > 120:
+            height = 80.0
+            notes.append("armchair_height_defaulted")
+
+    elif category == "tv_stand":
+        if name_length and 80 <= name_length <= 260:
+            width = name_length
+            notes.append("tv_width_inferred_from_name")
+
+        if not width or width < 80 or width > 280:
+            width = 160.0
+            notes.append("tv_width_defaulted")
+
+        if not depth or depth < 25 or depth > 70:
+            depth = 40.0
+            notes.append("tv_depth_defaulted")
+
+        if not height or height < 30 or height > 90:
+            height = 50.0
+            notes.append("tv_height_defaulted")
+
+    elif category == "side_table":
+        if not width or width < 25 or width > 90:
+            width = 45.0
+            notes.append("side_table_width_defaulted")
+
+        if not depth or depth < 25 or depth > 90:
+            depth = 45.0
+            notes.append("side_table_depth_defaulted")
+
+        if not height or height < 30 or height > 80:
+            height = 50.0
+            notes.append("side_table_height_defaulted")
+
+    else:
+        if not width:
+            width = 60.0
+            notes.append("generic_width_defaulted")
+        if not depth:
+            depth = 60.0
+            notes.append("generic_depth_defaulted")
+        if not height:
+            height = 60.0
+            notes.append("generic_height_defaulted")
+
+    cleaned = {
+        "width": round(float(width), 2),
+        "depth": round(float(depth), 2),
+        "height": round(float(height), 2),
+    }
+    needs_review = any("needs_review" in n for n in notes)
+
+    product["dimensionsRaw"] = raw_dims
+    product["dimensions"] = cleaned
+    product["dimensionQuality"] = "needs_review" if needs_review else ("fixed" if notes else "ok")
+    product["dimensionNotes"] = notes
+    product["needsDimensionReview"] = bool(needs_review)
+    return cleaned
+
+
 class LayoutTransformer(nn.Module):
     def __init__(self, num_categories, num_room_types, item_num_dim=4, room_num_dim=5, cat_emb_dim=48, room_emb_dim=16, d_model=128, nhead=8, num_layers=4, dropout=0.1):
         super().__init__()
@@ -106,7 +282,9 @@ def make_filter_feature_row(room_type, style_hint, room_w, room_l, room_h, categ
 def get_item_dims_from_payload_product(p):
     if "item_width_m" in p and "item_depth_m" in p and "item_height_m" in p:
         return float(p["item_width_m"]), float(p["item_depth_m"]), float(p["item_height_m"])
-    dims = p.get("dimensions", {})
+
+    # Làm sạch dimensions trước, sau đó mới đổi cm -> m
+    dims = normalize_product_dimensions_cm(p)
     return cm_to_m(dims.get("width", 0)), cm_to_m(dims.get("depth", 0)), cm_to_m(dims.get("height", 0))
 
 def build_infer_rows_from_be_payload(payload):
@@ -119,7 +297,7 @@ def build_infer_rows_from_be_payload(payload):
         category = canonical_category(p.get("category", "unknown"))
         item_w, item_d, item_h = get_item_dims_from_payload_product(p)
         row = make_filter_feature_row(room_type, style_hint, room_w, room_l, room_h, category, item_w, item_d, item_h)
-        row["product_id"] = p.get("id")
+        row["product_id"] = p.get("id") or p.get("productId") or p.get("product_id")
         row["name"] = p.get("name", "")
         row["raw_category"] = p.get("category", "")
         row["ranking_score"] = float(p.get("ranking_score", 0.0))
@@ -132,7 +310,13 @@ def build_infer_rows_from_be_payload(payload):
 
 def score_be_candidates(payload):
     infer_df = build_infer_rows_from_be_payload(payload)
-    if len(infer_df) == 0: return infer_df
+    if len(infer_df) == 0:
+        return infer_df
+    # Bỏ các dòng thiếu id để tránh output productId=null khi test thủ công dùng sai key.
+    if "product_id" in infer_df.columns:
+        infer_df = infer_df[infer_df["product_id"].notna()].copy()
+    if len(infer_df) == 0:
+        return infer_df
     X_infer = infer_df[filter_config["cat_cols"] + filter_config["num_cols"]].copy()
     infer_df["keep_probability"] = loaded_filter.predict_proba(X_infer)[:, 1]
     infer_df["final_score"] = 0.60 * infer_df["keep_probability"] + 0.20 * infer_df["ranking_score"] + 0.10 * infer_df["style_score"] + 0.10 * infer_df["color_score"]
@@ -595,10 +779,42 @@ def finalize_layout(payload):
     room = payload["room"]
     room = {"widthM": float(room["widthM"]), "lengthM": float(room["lengthM"]), "heightM": float(room["heightM"]), "type": canonical_room_type(room.get("type", "unknown")), "style": room.get("style", "")}
     top_k = int(payload.get("topK", 8))
-    threshold = float(payload.get("minScore", filter_config.get("recommended_threshold", 0.5)))
+    # Mặc định dùng 0.20 để debug/test thủ công không bị loại sạch candidate.
+    # Nếu BE gửi minScore thì vẫn ưu tiên giá trị BE gửi.
+    threshold = float(payload.get("minScore", 0.20))
     model_url_by_id = payload.get("modelUrlById", {})
 
     selected, rejected = select_products_for_layout(payload=payload, top_k=top_k, threshold=threshold)
+
+    # Guard quan trọng: nếu product_filter loại hết candidate thì không gọi Transformer với batch rỗng.
+    # Lỗi cũ: RuntimeError: to_padded_tensor: at least one constituent tensor should have non-zero numel
+    if not selected:
+        pybullet_ok, pybullet_note = pybullet_probe()
+        return {
+            "room": room,
+            "items": [],
+            "rejected": rejected,
+            "metrics": {
+                "selectedCount": 0,
+                "rejectedCount": len(rejected),
+                "outOfRoomFixed": 0,
+                "wallPriorFixes": 0,
+                "livingRoomCoreFixes": 0,
+                "coffeeTableFixes": 0,
+                "armchairFixes": 0,
+                "rugFixes": 0,
+                "wallItemFixes": 0,
+                "topSurfaceFixes": 0,
+                "collisionsResolved": 0,
+                "pybulletAvailable": bool(pybullet_ok),
+                "pybulletNote": pybullet_note,
+                "layoutModel": "decor_transformer.pt",
+                "filterModel": "product_filter.joblib",
+                "emptySelectionReason": "no_products_passed_filter_or_threshold",
+                "thresholdUsed": threshold,
+            }
+        }
+
     placed = predict_layout_for_selected(room, selected)
 
     items, out_of_room_fixed = [], 0
@@ -612,6 +828,9 @@ def finalize_layout(payload):
             "item_width_m": float(p.get("_w_m", 0.0)), "item_depth_m": float(p.get("_d_m", 0.0)), "item_height_m": float(p.get("_h_m", 0.0)),
             "anchor": p.get("pred_anchor", "floating"), "layer": "floor",
             "sourceRecommendationReasoning": raw.get("reasoning", p.get("source_reasoning", "")),
+            "dimensionQuality": raw.get("dimensionQuality", "ok"),
+            "dimensionNotes": raw.get("dimensionNotes", []),
+            "needsDimensionReview": raw.get("needsDimensionReview", False),
         }
         if item["category"] in WALL_MOUNT_CATEGORIES: item["layer"] = "wall"
         out_of_room_fixed += clamp_inside_room(item, room)
@@ -641,6 +860,9 @@ def finalize_layout(payload):
             "supportSurfaceId": item.get("supportSurfaceId"),
             "layoutReasoning": build_layout_reasoning(item),
             "sourceRecommendationReasoning": item.get("sourceRecommendationReasoning", ""),
+            "dimensionQuality": item.get("dimensionQuality", "ok"),
+            "dimensionNotes": item.get("dimensionNotes", []),
+            "needsDimensionReview": bool(item.get("needsDimensionReview", False)),
         })
 
     pybullet_ok, pybullet_note = pybullet_probe()
