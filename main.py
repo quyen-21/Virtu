@@ -1,306 +1,168 @@
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from typing import Dict, Any
-import traceback
+from fastapi import FastAPI, Form, UploadFile, File
+from typing import Dict, Any, Optional
 import json
-import hashlib
-import logging
 
-from inference import (
-    finalize_layout,
-    select_products_for_layout,
-    canonical_room_type,
-)
+from fastapi.responses import JSONResponse
+import traceback
 
-APP_VERSION = "layout-guard-2026-05-13-v3"
+from layout_engine.engine import finalize_layout
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("virtu-layout-service")
-
-app = FastAPI(
-    title="VirtuSpace AI Layout Service",
-    version=APP_VERSION,
-    description="AI layout service only. This service receives recommended products and returns 3D layout positions."
-)
-
-
-def payload_hash(payload: Dict[str, Any]) -> str:
-    """
-    Tạo hash để kiểm tra 2 lần test có thật sự cùng payload hay không.
-    Nếu payload giống 100%, hash phải giống nhau.
-    """
-    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
-    return hashlib.md5(raw.encode("utf-8")).hexdigest()
-
-
-def get_products(payload: Dict[str, Any]):
-    return payload.get("recommendation", {}).get("products", [])
-
-
-def validate_layout_payload(payload: Dict[str, Any]):
-    """
-    Validate nhẹ để tránh lỗi khó hiểu khi thiếu room hoặc products.
-    """
-    if not isinstance(payload, dict):
-        return "Payload must be a JSON object."
-
-    if "room" not in payload:
-        return "Missing required field: room."
-
-    room = payload.get("room") or {}
-
-    required_room_fields = ["widthM", "lengthM", "heightM"]
-    missing = [field for field in required_room_fields if field not in room]
-
-    if missing:
-        return f"Missing required room field(s): {', '.join(missing)}."
-
-    if "recommendation" not in payload:
-        return "Missing required field: recommendation."
-
-    products = get_products(payload)
-
-    if not isinstance(products, list):
-        return "recommendation.products must be a list."
-
-    return None
-
-
-@app.get("/")
-def root():
-    return {
-        "ok": True,
-        "service": "VirtuSpace AI Layout Service",
-        "version": APP_VERSION,
-        "message": "Use POST /api/ai/layout/generate for layout generation."
-    }
+app = FastAPI(title="VirtuSpace AI Layout Service", version="2.0.0")
 
 
 @app.get("/health")
 def health():
-    return {
-        "ok": True,
-        "service": "VirtuSpace AI Layout Service",
-        "version": APP_VERSION,
-        "endpoints": {
-            "layout": "/api/ai/layout/generate",
-            "layoutDebug": "/api/ai/layout/generate-debug",
-            "selectionDebug": "/api/ai/layout/debug-selection"
-        }
-    }
+    try:
+        from inference import model_info
+        info = model_info()
+    except Exception:
+        info = {"error": "model not loaded"}
+    return {"ok": True, "model": info}
 
 
 @app.post("/api/ai/layout/generate")
 def generate_layout(payload: Dict[str, Any]):
-    """
-    Endpoint chính cho Spring BE gọi.
-
-    Input đúng:
-    {
-      "room": {...},
-      "recommendation": {
-        "products": [...]
-      },
-      "topK": 8,
-      "minScore": 0.2
-    }
-
-    Output:
-    {
-      "room": {...},
-      "items": [
-        {
-          "productId": "...",
-          "position": {"x": ..., "y": ..., "z": ...},
-          "rotationY": ...
-        }
-      ],
-      "rejected": [...],
-      "metrics": {...}
-    }
-    """
-    err = validate_layout_payload(payload)
-    if err:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "error": err,
-                "payloadHash": payload_hash(payload) if isinstance(payload, dict) else None
-            }
-        )
-
-    hash_value = payload_hash(payload)
-    products = get_products(payload)
-
-    logger.info("POST /api/ai/layout/generate")
-    logger.info("payloadHash=%s", hash_value)
-    logger.info("productCount=%s", len(products))
-
-    try:
-        result = finalize_layout(payload)
-
-        if isinstance(result, dict):
-            metrics = result.setdefault("metrics", {})
-            metrics["payloadHash"] = hash_value
-            metrics["inputProductCount"] = len(products)
-            metrics["serviceVersion"] = APP_VERSION
-
-        return result
-
-    except Exception as e:
-        logger.exception("Layout generation failed. payloadHash=%s", hash_value)
-
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": str(e),
-                "payloadHash": hash_value,
-                "productCount": len(products),
-                "message": "Layout generation failed. Use /api/ai/layout/generate-debug for traceback."
-            }
-        )
-
+    return finalize_layout(payload)
 
 @app.post("/api/ai/layout/generate-debug")
 def generate_layout_debug(payload: Dict[str, Any]):
-    """
-    Endpoint debug. Dùng khi muốn xem traceback đầy đủ.
-    Không nên để FE gọi endpoint này trong production.
-    """
-    hash_value = payload_hash(payload) if isinstance(payload, dict) else None
-    products = get_products(payload) if isinstance(payload, dict) else []
-
     try:
-        err = validate_layout_payload(payload)
-        if err:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "success": False,
-                    "error": err,
-                    "payloadHash": hash_value,
-                    "productCount": len(products),
-                    "serviceVersion": APP_VERSION
-                }
-            )
-
-        result = finalize_layout(payload)
-
-        if isinstance(result, dict):
-            metrics = result.setdefault("metrics", {})
-            metrics["payloadHash"] = hash_value
-            metrics["inputProductCount"] = len(products)
-            metrics["serviceVersion"] = APP_VERSION
-
-        return result
-
+        return finalize_layout(payload)
     except Exception as e:
-        logger.exception("Debug layout generation failed. payloadHash=%s", hash_value)
-
         return JSONResponse(
             status_code=500,
             content={
-                "success": False,
                 "error": str(e),
-                "traceback": traceback.format_exc(),
-                "payloadHash": hash_value,
-                "productCount": len(products),
-                "serviceVersion": APP_VERSION
+                "traceback": traceback.format_exc()
             }
         )
-
 
 @app.post("/api/ai/layout/generate-from-recommendation")
 def generate_layout_from_recommendation(payload: Dict[str, Any]):
+    return finalize_layout(payload)
+
+
+@app.post("/api/v1/recommend")
+async def recommend_compat(
+    room_type: str = Form("living_room"),
+    style: str = Form(""),
+    width: float = Form(4.0),
+    length: float = Form(5.0),
+    height: float = Form(3.0),
+    furniture_density: str = Form("medium"),
+    gender: str = Form(""),
+    age: int = Form(25),
+    user_id: str = Form(""),
+    products_json: str = Form("[]"),
+    image: Optional[UploadFile] = File(None),
+):
     """
-    Alias endpoint nếu bạn vẫn còn test bằng tên cũ.
-    Logic giống /api/ai/layout/generate.
+    Compatibility endpoint for current Spring Boot backend.
+    Backend calls ai.api.url using multipart/form-data.
     """
-    return generate_layout(payload)
-
-
-@app.post("/api/ai/layout/debug-selection")
-def debug_selection(payload: Dict[str, Any]):
-    """
-    Debug bước filter trước khi gọi model Transformer.
-
-    Dùng endpoint này để biết:
-    - Payload có bao nhiêu product.
-    - Bao nhiêu product được selected.
-    - Bao nhiêu product bị rejected.
-    - Lý do reject là gì.
-
-    Nếu selectedCount = 0 thì layout sẽ không có items.
-    """
-    err = validate_layout_payload(payload)
-    if err:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "error": err,
-                "payloadHash": payload_hash(payload) if isinstance(payload, dict) else None,
-                "serviceVersion": APP_VERSION
-            }
-        )
-
-    hash_value = payload_hash(payload)
-    products = get_products(payload)
 
     try:
-        top_k = int(payload.get("topK", 8))
-        threshold = float(payload.get("minScore", 0.20))
+        products = json.loads(products_json) if products_json else []
+    except Exception:
+        products = []
 
-        selected, rejected = select_products_for_layout(
-            payload=payload,
-            top_k=top_k,
-            threshold=threshold
+    # Dump for debugging
+    try:
+        with open("last_frontend_request.json", "w", encoding="utf-8") as f:
+            json.dump({"room": room_type, "width": width, "length": length, "products": products}, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
+    payload = {
+        "room": {
+            "type": room_type,
+            "room_type": room_type,
+            "style": style,
+            "widthM": width,
+            "lengthM": length,
+            "heightM": height,
+            "width_m": width,
+            "length_m": length,
+            "height_m": height,
+        },
+        "recommendation": {
+            "products": products
+        },
+        "topK": 8,
+        "minScore": 0.50,
+        "furnitureDensity": furniture_density,
+    }
+
+    layout_result = finalize_layout(payload)
+
+    items = (
+        layout_result.get("items")
+        or layout_result.get("layout", {}).get("items")
+        or []
+    )
+
+    product_map = {
+        str(p.get("id") or p.get("product_id") or p.get("productId")): p
+        for p in products
+        if isinstance(p, dict)
+    }
+
+    response_products = []
+
+    for index, item in enumerate(items):
+        item_id = str(
+            item.get("productId")
+            or item.get("id")
+            or item.get("product_id")
+            or f"ai-product-{index + 1}"
         )
 
-        room = payload.get("room", {}) or {}
-        room_type = canonical_room_type(room.get("type", "unknown"))
+        src = product_map.get(item_id, {})
 
-        selected_view = []
-        for item in selected:
-            selected_view.append({
-                "productId": item.get("product_id"),
-                "name": item.get("name"),
-                "category": item.get("category"),
-                "rawCategory": item.get("raw_category"),
-                "keepProbability": float(item.get("keep_probability", 0.0)),
-                "finalScore": float(item.get("final_score", 0.0)),
-                "rankingScore": float(item.get("ranking_score", 0.0)),
-                "styleScore": float(item.get("style_score", 0.0)),
-                "colorScore": float(item.get("color_score", 0.0))
-            })
+        dimensions = src.get("dimensions") or item.get("dimensions") or {}
+        footprint = item.get("footprint") or {}
 
-        return {
-            "success": True,
-            "serviceVersion": APP_VERSION,
-            "payloadHash": hash_value,
-            "roomType": room_type,
-            "topK": top_k,
-            "threshold": threshold,
-            "productCount": len(products),
-            "selectedCount": len(selected),
-            "rejectedCount": len(rejected),
-            "selected": selected_view,
-            "rejected": rejected
-        }
+        response_products.append({
+            "id": item_id,
+            "name": src.get("name") or item.get("name") or item.get("category") or "AI Product",
+            "category": src.get("category") or item.get("category") or "Furniture",
+            "styles": src.get("styles") or ([style] if style else []),
+            "price": src.get("price"),
+            "dimensions": {
+                "width": dimensions.get("width") or footprint.get("widthM") or dimensions.get("width_m"),
+                "depth": dimensions.get("depth") or footprint.get("depthM") or dimensions.get("depth_m"),
+                "height": dimensions.get("height") or footprint.get("heightM") or dimensions.get("height_m"),
+            },
+            "colors": src.get("colors") or [],
+            "imageUrl": src.get("imageUrl") or src.get("image_url") or item.get("imageUrl") or "",
+            "facingTarget": item.get("facingTarget") or "",
+            "relations": item.get("relations") or [],
+            "reasoning": item.get("layoutReasoning") or item.get("reasoning") or "AI selected this product for the room layout.",
+        })
 
-    except Exception as e:
-        logger.exception("Debug selection failed. payloadHash=%s", hash_value)
+    # Extract detailed metrics
+    score_breakdown = layout_result.get("layout", {}).get("scoreBreakdown", {})
+    metrics = {
+        "layoutScore": layout_result.get("layout", {}).get("score", 0.0) / 100.0,
+        "collisionCount": layout_result.get("metrics", {}).get("repairs", {}).get("collisionsResolved", 0),
+        "relationScore": score_breakdown.get("relationScore", 0.0),
+        "facingScore": score_breakdown.get("facingScore", 0.0),
+        "clearanceScore": score_breakdown.get("clearance", 0.0),
+        "aestheticScore": score_breakdown.get("aestheticScore", 0.0),
+    }
 
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": str(e),
-                "traceback": traceback.format_exc(),
-                "payloadHash": hash_value,
-                "productCount": len(products),
-                "serviceVersion": APP_VERSION
-            }
-        )
+    return {
+        "analysis": {
+            "reasoning": "AI analyzed room dimensions, style, product compatibility, and layout constraints.",
+            "imageAnalysis": {
+                "dominantColors": [],
+                "colorTone": style,
+                "detectedStyle": style,
+                "lightingType": "",
+                "existingFurnitureCategories": [],
+            },
+        },
+        "metrics": metrics,
+        "products": response_products,
+        "layout": layout_result,
+    }

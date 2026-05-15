@@ -12,7 +12,7 @@ from .layout_reranker import choose_best_layout
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_DIR = Path(os.getenv('ARTIFACT_DIR', SERVICE_ROOT / 'artifacts'))
 
-CATEGORIES = ['sofa','chair','armchair','coffee_table','dining_table','desk','bed','nightstand','wardrobe','cabinet','shelf','tv_stand','tv','rug','lamp','plant','vase','book','decor','wall_art','mirror','door','window','curtain','sink','toilet','bathtub','counter','unknown']
+CATEGORIES = ['sofa','chair','armchair','coffee_table','dining_table','desk','bed','nightstand','wardrobe','cabinet','shelf','tv_stand','tv','rug','bench','lamp','plant','vase','book','decor','wall_art','mirror','door','window','curtain','sink','toilet','bathtub','counter','stove','fridge','shower','unknown']
 SUPPORTERS = {'coffee_table','dining_table','desk','nightstand','cabinet','shelf','tv_stand','counter'}
 NEEDS_SUPPORT = {'tv','vase','book','decor','lamp','plant'}
 WALL = {'wall_art','mirror','curtain','window','door'}
@@ -21,6 +21,14 @@ LAYER = {c:'floor' for c in CATEGORIES}
 for c in ['tv','vase','book','decor','lamp','plant']: LAYER[c] = 'top_surface'
 for c in WALL: LAYER[c] = 'wall'
 for c in UNDER: LAYER[c] = 'floor_under'
+
+FRONT_AXIS = {
+    'bed': '-Z', 'sofa': '-Z', 'tv': '+Z', 'chair': '+Z', 'armchair': '+Z',
+    'wardrobe': '-Z', 'nightstand': '-Z', 'desk': '+Z', 'counter': '+Z',
+    'tv_stand': '-Z', 'sink': '+Z', 'toilet': '+Z', 'stove': '+Z', 'fridge': '-Z',
+}
+WALL_OBJECTS = {'bed','sofa','wardrobe','cabinet','shelf','tv_stand','desk','counter','sink','toilet','bathtub','stove','fridge'}
+
 
 def safe(x): return str(x or 'unknown').strip().lower()
 
@@ -83,6 +91,378 @@ class HybridInteriorRuntimeV2:
         self.numeric_features = []
         self.max_objects = 16
         self._load_layout_model()
+
+    def _room_type(self, room):
+        return safe(room.get('type', room.get('room_type', 'unknown')))
+
+    def _room_dims(self, room):
+        return float(room.get('widthM', 4)), float(room.get('lengthM', 5)), float(room.get('heightM', 2.8))
+
+    def _product_id(self, product, fallback):
+        return str(product.get('productId', product.get('id', fallback)))
+
+    def _front_axis(self, category):
+        return FRONT_AXIS.get(safe(category), '+Z')
+
+    def _model_front_offset(self, category):
+        return {'+X': 0.0, '+Z': -math.pi / 2, '-X': math.pi, '-Z': math.pi / 2}.get(self._front_axis(category), -math.pi / 2)
+
+    def _face_target_angle(self, item, target):
+        ix, iz = float(item.get('x', 0.0)), float(item.get('z', 0.0))
+        tx, tz = target
+        return self._norm_angle(math.atan2(tz - iz, tx - ix) + self._model_front_offset(item.get('category')))
+
+    def _norm_angle(self, angle):
+        return math.atan2(math.sin(angle), math.cos(angle))
+
+    def _wall_outward_target(self, room, wall):
+        rw, rl, _ = self._room_dims(room)
+        return {
+            'front': (rw / 2, rl / 2),
+            'back': (rw / 2, rl / 2),
+            'left': (rw / 2, rl / 2),
+            'right': (rw / 2, rl / 2),
+        }.get(wall, (rw / 2, rl / 2))
+
+    def _rotation_from_wall(self, room, item, wall):
+        return self._face_target_angle(item, self._wall_outward_target(room, wall))
+
+    def _relation_graph(self, room_type):
+        graphs = {
+            'bedroom': {
+                'primaryObject': 'bed',
+                'relations': [
+                    {'a': 'bed', 'relation': 'against_wall', 'b': 'back_wall'},
+                    {'a': 'bed', 'relation': 'face_to', 'b': 'room_center'},
+                    {'a': 'nightstand', 'relation': 'left_of', 'b': 'bed'},
+                    {'a': 'nightstand', 'relation': 'right_of', 'b': 'bed'},
+                    {'a': 'rug', 'relation': 'under', 'b': 'bed'},
+                    {'a': 'bench', 'relation': 'in_front_of', 'b': 'bed'},
+                    {'a': 'wardrobe', 'relation': 'against_wall', 'b': 'right_wall'},
+                    {'a': 'chair', 'relation': 'near', 'b': 'side_table'},
+                ],
+            },
+            'living_room': {
+                'primaryObject': 'sofa',
+                'relations': [
+                    {'a': 'sofa', 'relation': 'face_to', 'b': 'tv'},
+                    {'a': 'coffee_table', 'relation': 'between', 'b': 'sofa_tv'},
+                    {'a': 'tv', 'relation': 'face_to', 'b': 'sofa'},
+                    {'a': 'rug', 'relation': 'under', 'b': 'seating_group'},
+                ],
+            },
+            'kitchen': {
+                'primaryObject': 'counter',
+                'relations': [
+                    {'a': 'counter', 'relation': 'against_wall', 'b': 'front_wall'},
+                    {'a': 'sink', 'relation': 'near', 'b': 'counter'},
+                    {'a': 'stove', 'relation': 'near', 'b': 'counter'},
+                    {'a': 'fridge', 'relation': 'near', 'b': 'entrance'},
+                ],
+            },
+            'bathroom': {
+                'primaryObject': 'sink',
+                'relations': [
+                    {'a': 'toilet', 'relation': 'against_wall', 'b': 'side_wall'},
+                    {'a': 'sink', 'relation': 'against_wall', 'b': 'front_wall'},
+                    {'a': 'mirror', 'relation': 'above', 'b': 'sink'},
+                    {'a': 'bathtub', 'relation': 'near', 'b': 'corner'},
+                ],
+            },
+        }
+        key = 'living_room' if room_type == 'livingroom' else room_type
+        return {'roomType': key, **graphs.get(key, {'primaryObject': None, 'relations': []})}
+
+    def _back_wall_center(self, room):
+        rw, rl, _ = self._room_dims(room)
+        return rw / 2, rl - 0.08
+
+    def _center(self, room):
+        rw, rl, _ = self._room_dims(room)
+        return rw / 2, rl / 2
+
+    def _wall_position(self, room, wall, item, t=0.5):
+        rw, rl, _ = self._room_dims(room)
+        f = fp(item)
+        t = max(0.12, min(0.88, float(t)))
+        if wall == 'left':
+            return f['widthM'] / 2 + 0.08, rl * t
+        if wall == 'right':
+            return rw - f['widthM'] / 2 - 0.08, rl * t
+        if wall == 'back':
+            return rw * t, rl - f['depthM'] / 2 - 0.08
+        return rw * t, f['depthM'] / 2 + 0.08
+
+    def _rotated_aabb_size(self, item):
+        f = fp(item)
+        c = abs(math.cos(float(item.get('rotationY', 0.0))))
+        s = abs(math.sin(float(item.get('rotationY', 0.0))))
+        return f['widthM'] * c + f['depthM'] * s, f['widthM'] * s + f['depthM'] * c
+
+    def _rotated_rect(self, item):
+        f = fp(item)
+        x, z, r = float(item.get('x', 0.0)), float(item.get('z', 0.0)), float(item.get('rotationY', 0.0))
+        hw, hd = f['widthM'] / 2, f['depthM'] / 2
+        pts = [(-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd)]
+        c, s = math.cos(r), math.sin(r)
+        return [(x + px * c - pz * s, z + px * s + pz * c) for px, pz in pts]
+
+    def _aabb_from_poly(self, poly):
+        xs = [p[0] for p in poly]; zs = [p[1] for p in poly]
+        return min(xs), min(zs), max(xs), max(zs)
+
+    def _place_item(self, room, item, x, z, rotation_y, wall_anchor=None, zone='free', relations=None, facing_target=None, reason=None):
+        item['x'] = float(x)
+        item['z'] = float(z)
+        item['y'] = 0.0
+        item['rotationY'] = self._norm_angle(float(rotation_y))
+        item['wallAnchor'] = wall_anchor
+        item['placementZone'] = zone
+        item['facingTarget'] = facing_target
+        item['relations'] = relations or []
+        item['layoutReasoning'] = reason
+        item['frontAxis'] = self._front_axis(item.get('category'))
+        return item
+
+    def _bedroom_template(self, room, products):
+        rw, rl, _ = self._room_dims(room)
+        items, used = [], set()
+        bed = next((p for p in products if safe(p.get('category')) == 'bed'), None)
+        if bed:
+            bed = dict(bed); bed['layer'] = 'floor'; bed['footprint'] = fp(bed); bed['productId'] = self._product_id(bed, 'bed_0')
+            bx = rw / 2
+            bz = rl - bed['footprint']['depthM'] / 2 - 0.08
+            bed_probe = {'category': 'bed', 'x': bx, 'z': bz}
+            rot = self._face_target_angle(bed_probe, self._center(room))
+            self._place_item(room, bed, bx, bz, rot, 'back', 'back_wall',
+                             [{'type': 'against_wall', 'target': 'back_wall'}, {'type': 'face_to', 'target': 'room_center'}],
+                             'room_center', 'Giường được đặt giữa tường sau, đầu giường áp tường và mặt giường hướng ra trung tâm phòng.')
+            items.append(bed); used.add(bed['productId']); bed_cx, bed_cz = bx, bz; bed_f = bed['footprint']
+        else:
+            bed_cx, bed_cz = self._center(room); bed_f = {'widthM': 1.6, 'depthM': 2.0, 'heightM': 0.8}
+
+        stands = [p for p in products if safe(p.get('category')) == 'nightstand' and self._product_id(p, '') not in used]
+        for idx, side in enumerate(['left', 'right']):
+            if idx >= len(stands):
+                break
+            q = dict(stands[idx]); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, f'nightstand_{idx}')
+            offset = bed_f['widthM'] / 2 + q['footprint']['widthM'] / 2 + 0.12
+            x = bed_cx - offset if side == 'left' else bed_cx + offset
+            z = bed_cz - 0.18
+            rot = self._face_target_angle({'category': 'nightstand', 'x': x, 'z': z}, self._center(room))
+            self._place_item(room, q, x, z, rot, None, 'bedside', [{'type': f'{side}_of', 'target': 'bed'}],
+                             'room_center', f'Tab đầu giường được đặt {side} giường để tạo bố cục cân xứng.')
+            items.append(q); used.add(q['productId'])
+
+        for cat, zone, reason in [('rug', 'under_bed', 'Thảm được căn dưới giường và lớn hơn vùng ngủ để gom nhóm không gian.'), ('bench', 'foot_of_bed', 'Ghế băng đặt ở cuối giường, không chắn lối đi chính.')]:
+            p = next((x for x in products if safe(x.get('category')) == cat and self._product_id(x, '') not in used), None)
+            if not p:
+                continue
+            q = dict(p); q['layer'] = 'floor_under' if cat == 'rug' else 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, cat)
+            z = bed_cz - bed_f['depthM'] / 2 - q['footprint']['depthM'] / 2 - 0.12 if cat == 'bench' else bed_cz - 0.15
+            rel = 'under' if cat == 'rug' else 'in_front_of'
+            self._place_item(room, q, bed_cx, z, self._face_target_angle({'category': cat, 'x': bed_cx, 'z': z}, self._center(room)), None, zone,
+                             [{'type': rel, 'target': 'bed'}], 'room_center', reason)
+            items.append(q); used.add(q['productId'])
+
+        wardrobe = next((p for p in products if safe(p.get('category')) in {'wardrobe','cabinet'} and self._product_id(p, '') not in used), None)
+        if wardrobe:
+            q = dict(wardrobe); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'wardrobe')
+            x, z = self._wall_position(room, 'right', q, 0.58)
+            rot = self._face_target_angle({'category': q.get('category'), 'x': x, 'z': z}, self._center(room))
+            self._place_item(room, q, x, z, rot, 'right', 'side_wall', [{'type': 'against_wall', 'target': 'right_wall'}, {'type': 'face_to', 'target': 'room_center'}],
+                             'room_center', 'Tủ được áp sát tường phải và mặt tủ hướng ra khoảng trống để tránh quay vào tường.')
+            items.append(q); used.add(q['productId'])
+
+        chair = next((p for p in products if safe(p.get('category')) in {'chair', 'armchair'} and self._product_id(p, '') not in used), None)
+        if chair:
+            q = dict(chair); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'chair')
+            x, z = rw - q['footprint']['widthM'] / 2 - 0.35, max(q['footprint']['depthM'] / 2 + 0.35, rl * 0.32)
+            rot = self._face_target_angle({'category': q.get('category'), 'x': x, 'z': z}, (bed_cx, bed_cz))
+            self._place_item(room, q, x, z, rot, None, 'reading_corner', [{'type': 'near', 'target': 'side_table'}, {'type': 'face_to', 'target': 'bed'}],
+                             'bed', 'Ghế thư giãn đặt ở góc trống và xoay về giường để tạo góc đọc/sinh hoạt.')
+            items.append(q); used.add(q['productId'])
+        return items
+
+    def _living_room_template(self, room, products):
+        rw, rl, _ = self._room_dims(room)
+        items, used = [], set()
+        sofa = next((p for p in products if safe(p.get('category')) == 'sofa'), None)
+        tv = next((p for p in products if safe(p.get('category')) == 'tv'), None)
+        coffee = next((p for p in products if safe(p.get('category')) == 'coffee_table'), None)
+        rug = next((p for p in products if safe(p.get('category')) == 'rug'), None)
+        armchair = next((p for p in products if safe(p.get('category')) in {'armchair', 'chair'}), None)
+        side_table = next((p for p in products if safe(p.get('category')) in {'nightstand', 'cabinet', 'shelf'}), None)
+
+        if sofa:
+            q = dict(sofa); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'sofa')
+            x = rw / 2
+            z = rl - q['footprint']['depthM'] / 2 - 0.22
+            rot = self._face_target_angle({'category': 'sofa', 'x': x, 'z': z}, (rw / 2, 0.5))
+            self._place_item(room, q, x, z, rot, 'back', 'seating',
+                             [{'type': 'face_to', 'target': 'tv'}, {'type': 'against_wall', 'target': 'back_wall'}],
+                             'tv', 'Sofa đặt gần tường sau và xoay về phía TV để tạo cụm sinh hoạt trung tâm.')
+            items.append(q); used.add(q['productId'])
+            sofa_cx, sofa_cz = x, z
+        else:
+            sofa_cx, sofa_cz = rw / 2, rl * 0.7
+
+        if tv:
+            q = dict(tv); q['layer'] = 'wall'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'tv')
+            x = rw / 2
+            z = q['footprint']['depthM'] / 2 + 0.08
+            rot = self._face_target_angle({'category': 'tv', 'x': x, 'z': z}, (sofa_cx, sofa_cz))
+            self._place_item(room, q, x, z, rot, 'front', 'tv_wall',
+                             [{'type': 'face_to', 'target': 'sofa'}, {'type': 'against_wall', 'target': 'front_wall'}],
+                             'sofa', 'TV được đặt áp tường trước và hướng về sofa.')
+            items.append(q); used.add(q['productId'])
+
+        if coffee:
+            q = dict(coffee); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'coffee_table')
+            x = rw / 2
+            z = (sofa_cz + rl / 2) / 2
+            rot = self._face_target_angle({'category': 'coffee_table', 'x': x, 'z': z}, (sofa_cx, sofa_cz))
+            self._place_item(room, q, x, z, rot, None, 'center', [{'type': 'between', 'target': 'sofa_tv'}], 'sofa', 'Bàn trà được đặt giữa sofa và TV để hoàn chỉnh cụm ngồi.')
+            items.append(q); used.add(q['productId'])
+
+        if rug:
+            q = dict(rug); q['layer'] = 'floor_under'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'rug')
+            x = rw / 2
+            z = (sofa_cz + rl / 2) / 2
+            self._place_item(room, q, x, z, 0.0, None, 'under_seating', [{'type': 'under', 'target': 'seating_group'}], 'sofa', 'Thảm gom nhóm ghế ngồi và tạo vùng sinh hoạt rõ ràng.')
+            items.append(q); used.add(q['productId'])
+
+        if armchair:
+            q = dict(armchair); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'armchair')
+            x = rw * 0.78
+            z = rl * 0.48
+            rot = self._face_target_angle({'category': q.get('category'), 'x': x, 'z': z}, (rw / 2, rl / 2))
+            self._place_item(room, q, x, z, rot, None, 'reading_corner', [{'type': 'near', 'target': 'side_table'}, {'type': 'face_to', 'target': 'tv'}], 'tv', 'Ghế phụ được đặt lệch góc để cân bằng cụm phòng khách.')
+            items.append(q); used.add(q['productId'])
+
+        if side_table:
+            q = dict(side_table); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'side_table')
+            x = min(rw - q['footprint']['widthM'] / 2 - 0.2, rw * 0.86)
+            z = rl * 0.55
+            self._place_item(room, q, x, z, self._face_target_angle({'category': q.get('category'), 'x': x, 'z': z}, (sofa_cx, sofa_cz)), None, 'side_zone', [{'type': 'near', 'target': 'armchair'}], 'sofa', 'Bàn phụ nằm cạnh ghế để hoàn thiện góc đọc/ngồi.')
+            items.append(q); used.add(q['productId'])
+        return items
+
+    def _kitchen_template(self, room, products):
+        rw, rl, _ = self._room_dims(room)
+        items, used = [], set()
+        counter = next((p for p in products if safe(p.get('category')) == 'counter'), None)
+        sink = next((p for p in products if safe(p.get('category')) == 'sink'), None)
+        stove = next((p for p in products if safe(p.get('category')) == 'stove'), None)
+        fridge = next((p for p in products if safe(p.get('category')) == 'fridge'), None)
+        dining = next((p for p in products if safe(p.get('category')) == 'dining_table'), None)
+        chair = next((p for p in products if safe(p.get('category')) == 'chair'), None)
+
+        if counter:
+            q = dict(counter); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'counter')
+            x = rw / 2
+            z = q['footprint']['depthM'] / 2 + 0.08
+            rot = self._rotation_from_wall(room, {'category': 'counter', 'x': x, 'z': z}, 'front')
+            self._place_item(room, q, x, z, rot, 'front', 'against_wall', [{'type': 'against_wall', 'target': 'front_wall'}], 'working_area', 'Bàn bếp áp tường để giữ mặt sử dụng quay ra lối đi.')
+            items.append(q); used.add(q['productId'])
+            counter_cx, counter_cz = x, z
+        else:
+            counter_cx, counter_cz = rw / 2, rl * 0.18
+
+        if sink:
+            q = dict(sink); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'sink')
+            x = rw / 2 - 0.45
+            z = q['footprint']['depthM'] / 2 + 0.08
+            self._place_item(room, q, x, z, self._rotation_from_wall(room, {'category': 'sink', 'x': x, 'z': z}, 'front'), 'front', 'sink_zone', [{'type': 'near', 'target': 'counter'}], 'counter', 'Chậu rửa được đặt sát dải bếp để tạo workflow nấu nướng liên tục.')
+            items.append(q); used.add(q['productId'])
+
+        if stove:
+            q = dict(stove); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'stove')
+            x = rw / 2 + 0.45
+            z = q['footprint']['depthM'] / 2 + 0.08
+            self._place_item(room, q, x, z, self._rotation_from_wall(room, {'category': 'stove', 'x': x, 'z': z}, 'front'), 'front', 'cooking_zone', [{'type': 'near', 'target': 'counter'}], 'counter', 'Bếp nấu nằm tách nhẹ khỏi chậu rửa để an toàn và tiện thao tác.')
+            items.append(q); used.add(q['productId'])
+
+        if fridge:
+            q = dict(fridge); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'fridge')
+            x, z = rw - q['footprint']['widthM'] / 2 - 0.14, rl * 0.28
+            self._place_item(room, q, x, z, self._face_target_angle({'category': 'fridge', 'x': x, 'z': z}, (rw / 2, rl / 2)), 'right', 'entry', [{'type': 'near', 'target': 'counter'}], 'counter', 'Tủ lạnh đặt gần vùng vào bếp nhưng không chắn lối đi chính.')
+            items.append(q); used.add(q['productId'])
+
+        if dining:
+            q = dict(dining); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'dining_table')
+            x = rw * 0.68
+            z = rl * 0.62
+            self._place_item(room, q, x, z, self._face_target_angle({'category': 'dining_table', 'x': x, 'z': z}, (rw / 2, rl / 2)), None, 'dining_zone', [{'type': 'near', 'target': 'chairs'}], 'center', 'Bàn ăn nằm trong vùng trống để tách khỏi khối bếp.')
+            items.append(q); used.add(q['productId'])
+
+        if chair:
+            q = dict(chair); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'chair')
+            x = rw * 0.58
+            z = rl * 0.62 + 0.32
+            self._place_item(room, q, x, z, self._face_target_angle({'category': 'chair', 'x': x, 'z': z}, (rw * 0.68, rl * 0.62)), None, 'dining_zone', [{'type': 'face_to', 'target': 'dining_table'}], 'dining_table', 'Ghế ăn quay về bàn ăn và giữ khoảng trống đủ đi lại.')
+            items.append(q); used.add(q['productId'])
+        return items
+
+    def _bathroom_template(self, room, products):
+        rw, rl, _ = self._room_dims(room)
+        items, used = [], set()
+        toilet = next((p for p in products if safe(p.get('category')) == 'toilet'), None)
+        sink = next((p for p in products if safe(p.get('category')) == 'sink'), None)
+        mirror = next((p for p in products if safe(p.get('category')) == 'mirror'), None)
+        bathtub = next((p for p in products if safe(p.get('category')) in {'bathtub', 'shower'}), None)
+        cabinet = next((p for p in products if safe(p.get('category')) in {'cabinet', 'shelf'}), None)
+
+        if toilet:
+            q = dict(toilet); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'toilet')
+            x = rw * 0.25
+            z = rl - q['footprint']['depthM'] / 2 - 0.15
+            self._place_item(room, q, x, z, self._rotation_from_wall(room, {'category': 'toilet', 'x': x, 'z': z}, 'back'), 'back', 'toilet_zone', [{'type': 'against_wall', 'target': 'back_wall'}], 'back_wall', 'Toilet áp tường để giữ lối đi và vùng vệ sinh rõ ràng.')
+            items.append(q); used.add(q['productId'])
+
+        if sink:
+            q = dict(sink); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'sink')
+            x = rw * 0.72
+            z = q['footprint']['depthM'] / 2 + 0.08
+            self._place_item(room, q, x, z, self._rotation_from_wall(room, {'category': 'sink', 'x': x, 'z': z}, 'front'), 'front', 'sink_zone', [{'type': 'against_wall', 'target': 'front_wall'}], 'mirror', 'Lavabo đặt sát tường trước để thuận tay và dành chỗ cho gương phía trên.')
+            items.append(q); used.add(q['productId'])
+
+        if mirror:
+            q = dict(mirror); q['layer'] = 'wall'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'mirror')
+            x = rw * 0.72
+            z = 0.08
+            self._place_item(room, q, x, z, 0.0, 'front', 'wall', [{'type': 'above', 'target': 'sink'}], 'sink', 'Gương treo phía trên lavabo để đúng công năng sử dụng.')
+            items.append(q); used.add(q['productId'])
+
+        if bathtub:
+            q = dict(bathtub); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'bathtub')
+            x = rw * 0.62
+            z = rl * 0.48
+            self._place_item(room, q, x, z, self._face_target_angle({'category': q.get('category'), 'x': x, 'z': z}, (rw / 2, rl / 2)), None, 'corner', [{'type': 'near', 'target': 'corner'}], 'back_wall', 'Bồn tắm đặt ở góc rộng để không chặn khu lavabo.')
+            items.append(q); used.add(q['productId'])
+
+        if cabinet:
+            q = dict(cabinet); q['layer'] = 'floor'; q['footprint'] = fp(q); q['productId'] = self._product_id(q, 'cabinet')
+            x = rw * 0.78
+            z = rl * 0.38
+            self._place_item(room, q, x, z, self._face_target_angle({'category': q.get('category'), 'x': x, 'z': z}, (rw / 2, rl / 2)), 'right', 'storage', [{'type': 'against_wall', 'target': 'right_wall'}], 'room_center', 'Tủ phụ đặt sát tường bên để chứa đồ mà không ảnh hưởng lối di chuyển.')
+            items.append(q); used.add(q['productId'])
+        return items
+
+    def _default_template(self, room, products):
+        return self.prior(room, products, 0)
+
+    def _template_layout(self, room, products):
+        room_type = self._room_type(room)
+        if room_type == 'bedroom':
+            return self._bedroom_template(room, products)
+        if room_type in {'living_room', 'livingroom'}:
+            return self._living_room_template(room, products)
+        if room_type == 'kitchen':
+            return self._kitchen_template(room, products)
+        if room_type == 'bathroom':
+            return self._bathroom_template(room, products)
+        return self._default_template(room, products)
 
     def _load_joblib(self, name):
         p = self.artifact_dir / name
@@ -330,7 +710,8 @@ class HybridInteriorRuntimeV2:
         return items
 
     def _make_candidates_from_transformer(self, room, selected, top_k):
-        base = self.transformer_layout(room, selected)
+        template = self._template_layout(room, selected)
+        base = template or self.transformer_layout(room, selected)
         if not base:
             return [self.prior(room, selected, k) for k in range(max(1, top_k))]
         candidates = []
@@ -338,18 +719,80 @@ class HybridInteriorRuntimeV2:
             items = []
             for idx, it in enumerate(base):
                 q = dict(it)
-                if q.get('layer') == 'floor':
-                    # small deterministic jitter for diverse candidates
-                    dx = ((k % 3) - 1) * 0.08
-                    dz = (((k // 3) % 3) - 1) * 0.08
+                if q.get('layer') == 'floor' and safe(q.get('category')) not in {'bed','sofa','tv','wardrobe','counter','sink','toilet'}:
+                    dx = ((k % 3) - 1) * 0.06
+                    dz = (((k // 3) % 3) - 1) * 0.06
                     q['x'] = float(q['x']) + dx
                     q['z'] = float(q['z']) + dz
-                elif q.get('layer') == 'wall' and k > 0:
+                    if q.get('facingTarget') == 'room_center':
+                        q['rotationY'] = self._face_target_angle(q, self._center(room))
+                elif q.get('layer') == 'wall' and k > 0 and not template:
                     q['wallAnchor'] = ['front','right','back','left'][k % 4]
-                q['rotationY'] = float(q.get('rotationY', 0.0) + (0.0 if q.get('layer') == 'wall' else (k % 4) * math.pi / 8))
+                q['rotationY'] = self._norm_angle(float(q.get('rotationY', 0.0)))
                 items.append(q)
             candidates.append(items)
         return candidates
+
+    def _layout_quality_metrics(self, room, items, base_metrics):
+        rw, rl, _ = self._room_dims(room)
+        collision_count, outside_count = 0, 0
+        floor = [it for it in items if it.get('layer', 'floor') == 'floor']
+        for it in floor:
+            x1, z1, x2, z2 = self._aabb_from_poly(self._rotated_rect(it))
+            outside_count += int(x1 < -1e-3 or z1 < -1e-3 or x2 > rw + 1e-3 or z2 > rl + 1e-3)
+        for i in range(len(floor)):
+            ax1, az1, ax2, az2 = self._aabb_from_poly(self._rotated_rect(floor[i]))
+            for j in range(i + 1, len(floor)):
+                bx1, bz1, bx2, bz2 = self._aabb_from_poly(self._rotated_rect(floor[j]))
+                collision_count += int(min(ax2, bx2) > max(ax1, bx1) and min(az2, bz2) > max(az1, bz1))
+        relation_total = sum(len(it.get('relations') or []) for it in items) or 1
+        relation_score = max(0.0, 1.0 - 0.08 * base_metrics.get('penalties', {}).get('wall', 0) - 0.12 * outside_count)
+        facing_items = [it for it in items if it.get('facingTarget')]
+        facing_score = 1.0
+        for it in facing_items:
+            target = self._center(room) if it.get('facingTarget') == 'room_center' else None
+            if target:
+                expected = self._face_target_angle(it, target)
+                err = abs(self._norm_angle(float(it.get('rotationY', 0.0)) - expected)) / math.pi
+                facing_score -= err / max(1, len(facing_items))
+        clearance_score = max(0.0, 1.0 - 0.12 * collision_count - 0.08 * outside_count - 0.04 * len(items) / max(rw * rl, 1.0))
+        wall_alignment_score = max(0.0, 1.0 - 0.08 * sum(1 for it in items if safe(it.get('category')) in WALL_OBJECTS and not it.get('wallAnchor')))
+        symmetry_score = 0.75
+        stands = [it for it in items if safe(it.get('category')) == 'nightstand']
+        beds = [it for it in items if safe(it.get('category')) == 'bed']
+        if len(stands) >= 2 and beds:
+            bx = float(beds[0].get('x', 0.0))
+            ds = sorted(abs(float(s.get('x', 0.0)) - bx) for s in stands[:2])
+            symmetry_score = max(0.0, 1.0 - abs(ds[0] - ds[1]))
+        room_balance_score = max(0.0, 1.0 - abs(sum(float(it.get('x', rw / 2)) for it in items) / max(1, len(items)) - rw / 2) / max(rw / 2, 1e-6)) if items else 0.0
+        aesthetic_score = max(0.0, min(1.0, 0.22 * relation_score + 0.22 * facing_score + 0.18 * clearance_score + 0.16 * wall_alignment_score + 0.12 * symmetry_score + 0.10 * room_balance_score))
+        return {
+            'collisionCount': collision_count,
+            'outsideCount': outside_count,
+            'relationScore': round(relation_score, 4),
+            'facingScore': round(max(0.0, min(1.0, facing_score)), 4),
+            'clearanceScore': round(clearance_score, 4),
+            'wallAlignmentScore': round(wall_alignment_score, 4),
+            'symmetryScore': round(symmetry_score, 4),
+            'roomBalanceScore': round(room_balance_score, 4),
+            'aestheticScore': round(aesthetic_score, 4),
+            'relationCount': relation_total,
+        }
+
+    def _format_item_for_fe(self, item):
+        q = dict(item)
+        f = fp(q)
+        q['footprint'] = f
+        q['position'] = {'x': float(q.get('x', 0.0)), 'y': float(q.get('y', 0.0)), 'z': float(q.get('z', 0.0))}
+        q['rotationY'] = float(q.get('rotationY', 0.0))
+        q['category'] = safe(q.get('category'))
+        q['productId'] = self._product_id(q, q.get('category', 'item'))
+        q['frontAxis'] = self._front_axis(q['category'])
+        q['canAgainstWall'] = q['category'] in WALL_OBJECTS or bool(q.get('wallAnchor'))
+        q['needsSupport'] = q['category'] in NEEDS_SUPPORT
+        q['supportSurface'] = q['category'] in SUPPORTERS
+        q['footprintPolygon'] = [{'x': x, 'z': z} for x, z in self._rotated_rect(q)]
+        return q
 
     def generate_layout(self, payload):
         room = payload.get('room', {})
@@ -357,6 +800,8 @@ class HybridInteriorRuntimeV2:
         opts = payload.get('options', {})
         min_score = float(opts.get('minScore', .35))
         top_k = int(opts.get('topK', 8))
+        room_type = self._room_type(room)
+        relation_graph = self._relation_graph(room_type)
 
         scored = self.score_products(room, products)
         selected = [p for p in scored if p.get('keepProbability', 0) >= min_score] or sorted(scored, key=lambda x: x.get('keepProbability', 0), reverse=True)[:min(6, len(scored))]
@@ -366,8 +811,10 @@ class HybridInteriorRuntimeV2:
         candidates = []
         for raw_items in raw_candidates:
             items, rejected, metrics = fast_solve_layout(room, raw_items)
+            metrics.update(self._layout_quality_metrics(room, items, metrics))
             metrics['setProbability'] = set_score
             metrics['usedLayoutModel'] = bool(self.layout_model is not None)
+            metrics['usedRoomTemplate'] = bool(self._template_layout(room, selected))
             if needs_heavy_check(items, metrics):
                 ok, heavy = heavy_check_layout(room, items)
                 metrics['heavyPhysics'] = heavy
@@ -378,9 +825,11 @@ class HybridInteriorRuntimeV2:
             candidates.append({'items': items, 'rejected': rejected, 'metrics': metrics})
 
         best = choose_best_layout(candidates)
+        best_items = [self._format_item_for_fe(it) for it in best.get('items', [])]
         return {
             'room': room,
-            'items': best.get('items', []),
+            'relationGraph': relation_graph,
+            'items': best_items,
             'rejected': best.get('rejected', []),
             'metrics': best.get('metrics', {}),
             'candidateSummary': [

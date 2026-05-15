@@ -1,0 +1,22 @@
+{
+  "room": {
+    "widthM": 10,
+    "lengthM": 12,
+    "heightM": 4,
+    "type": "living_room",
+    "style": "Hiện đại"
+  },
+  "topK": 8,
+  "recommendation": {
+    "products": [
+      {"id": "sofa01", "name": "Sofa cam", "category": "sofa", "styles": ["Hiện đại"], "dimensions": {"widthM": 2.6, "depthM": 0.9, "heightM": 0.8}, "modelUrl": ""},
+      {"id": "tv01", "name": "Kệ TV", "category": "tv_stand", "styles": ["Hiện đại"], "dimensions": {"widthM": 1.8, "depthM": 0.45, "heightM": 0.55}, "modelUrl": ""},
+      {"id": "table01", "name": "Bàn nước", "category": "coffee_table", "styles": ["Hiện đại"], "dimensions": {"widthM": 1.2, "depthM": 0.65, "heightM": 0.42}, "modelUrl": ""},
+      {"id": "rug01", "name": "Thảm", "category": "rug", "styles": ["Hiện đại"], "dimensions": {"widthM": 2.5, "depthM": 1.8, "heightM": 0.03}, "modelUrl": ""},
+      {"id": "chair01", "name": "Ghế đơn", "category": "armchair", "styles": ["Hiện đại"], "dimensions": {"widthM": 0.8, "depthM": 0.8, "heightM": 0.85}, "modelUrl": ""},
+      {"id": "side01", "name": "Bàn phụ", "category": "side_table", "styles": ["Hiện đại"], "dimensions": {"widthM": 0.5, "depthM": 0.45, "heightM": 0.5}, "modelUrl": ""},
+      {"id": "plant01", "name": "Cây trang trí", "category": "plant", "styles": ["Hiện đại"], "dimensions": {"widthM": 0.55, "depthM": 0.55, "heightM": 1.4}, "modelUrl": ""},
+      {"id": "art01", "name": "Tranh tường", "category": "wall_art", "styles": ["Hiện đại"], "dimensions": {"widthM": 0.8, "depthM": 0.05, "heightM": 0.7}, "modelUrl": ""}
+    ]
+  }
+}
