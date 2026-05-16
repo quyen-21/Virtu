@@ -275,6 +275,32 @@ class HybridInteriorRuntimeV2:
             reasons.append('nightstand_without_bed')
         if room_type in {'living_room', 'livingroom'} and 'coffee_table' in cats and 'sofa' not in cats:
             reasons.append('coffee_table_without_sofa')
+        if room_type == 'bedroom' and 'bed' in cats:
+            if not any(it.get('placementZone') == 'bedside' for it in items if safe(it.get('category')) == 'nightstand'):
+                reasons.append('missing_bedside_group')
+            if not any(safe(it.get('category')) == 'rug' and it.get('placementZone') == 'under_bed' for it in items):
+                reasons.append('missing_bed_rug_group')
+        if room_type in {'living_room', 'livingroom'} and 'sofa' in cats:
+            if not any(it.get('placementZone') == 'center' for it in items if safe(it.get('category')) == 'coffee_table'):
+                reasons.append('missing_coffee_table_group')
+            if not any(safe(it.get('category')) == 'rug' and it.get('placementZone') == 'under_seating' for it in items):
+                reasons.append('missing_seating_rug_group')
+            if 'armchair' in cats and not any(it.get('placementZone') == 'reading_corner' for it in items if safe(it.get('category')) in {'armchair', 'chair'}):
+                reasons.append('missing_armchair_group')
+        if room_type == 'kitchen' and 'counter' in cats:
+            if not any(safe(it.get('category')) == 'sink' and it.get('placementZone') == 'sink_zone' for it in items):
+                reasons.append('missing_sink_group')
+            if not any(safe(it.get('category')) == 'stove' and it.get('placementZone') == 'cooking_zone' for it in items):
+                reasons.append('missing_stove_group')
+            if 'fridge' in cats and not any(it.get('placementZone') == 'entry' for it in items if safe(it.get('category')) == 'fridge'):
+                reasons.append('missing_fridge_group')
+        if room_type == 'bathroom' and 'sink' in cats:
+            if not any(safe(it.get('category')) == 'mirror' and it.get('placementZone') == 'wall' for it in items):
+                reasons.append('missing_mirror_group')
+            if 'toilet' in cats and not any(it.get('placementZone') == 'toilet_zone' for it in items if safe(it.get('category')) == 'toilet'):
+                reasons.append('missing_toilet_group')
+            if not any(safe(it.get('category')) in {'bathtub', 'shower'} and it.get('placementZone') == 'corner' for it in items):
+                reasons.append('missing_bath_group')
         return reasons
 
     def _composition_policy(self, room_type):
@@ -1222,6 +1248,7 @@ class HybridInteriorRuntimeV2:
             metrics['roomZones'] = room_zones
             metrics['hardFailures'] = hard_failures
             metrics['hardPass'] = not hard_failures
+            metrics['hardRejected'] = bool(hard_failures)
             metrics['visibilityFront'] = self._visibility_from_camera(room, items, 'front')
             metrics['visibilityCorner'] = self._visibility_from_camera(room, items, 'corner')
             metrics['cameraVisibilityScore'] = round((metrics['visibilityFront'] + metrics['visibilityCorner']) / 2, 4)
