@@ -1,0 +1,325 @@
+{
+  "room": {
+    "widthM": 5,
+    "lengthM": 4,
+    "heightM": 2,
+    "type": "bedroom",
+    "style": "Modern"
+  },
+  "recommendation": {
+    "products": [
+      {
+        "id": "69b8fe05ad9ed84f9008b6bb",
+        "name": "Bàn Đầu Giường Trắng Universal Hiện Đại",
+        "category": "Storage",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 50,
+          "depth": 60.5,
+          "height": 44.5
+        },
+        "ranking_score": 0.7172,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2022/07/BAN-DAU-GIUONG-UNIVERSAL-HEMP-P151-2-320x213.jpg"
+      },
+      {
+        "id": "69b8fe13ad9ed84f9008b73c",
+        "name": "Đèn Áp Trần Trang Trí Kinan White",
+        "category": "Lamp",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 54,
+          "depth": 54,
+          "height": 30
+        },
+        "ranking_score": 0.3839,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2021/12/104270-den-tran-perfectly-shaped-ceiling-light-kinan-in-white-4.jpg"
+      },
+      {
+        "id": "69b8fdffad9ed84f9008b685",
+        "name": "Tủ Đầu Giường Violetta Vintage Blue",
+        "category": "Storage",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 60.5,
+          "depth": 40.5,
+          "height": 40.5
+        },
+        "ranking_score": 0.3699,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2025/12/Tu-Dau-Giuong-Violetta-3-320x213.webp"
+      },
+      {
+        "id": "69b8fdfdad9ed84f9008b66f",
+        "name": "Bàn Đầu Giường Tau Hiện Đai",
+        "category": "Storage",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 50,
+          "depth": 50,
+          "height": 52.5
+        },
+        "ranking_score": 0.2833,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2023/05/BAN-DAU-GIUONG-TAU-TRANG-4.jpg"
+      },
+      {
+        "id": "69b8fe0cad9ed84f9008b6fb",
+        "name": "Đèn Trần Quattro 52505K",
+        "category": "Lamp",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 22,
+          "depth": 112,
+          "height": 150
+        },
+        "ranking_score": 0.2833,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2022/05/Den-Tran-Quattro-52505K-3105590-5-1000x591.jpg"
+      },
+      {
+        "id": "69b8fe04ad9ed84f9008b6b0",
+        "name": "Đèn Bàn Antiq Brass Cryst 36Cm",
+        "category": "Table",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 21,
+          "depth": 36,
+          "height": 57.5
+        },
+        "ranking_score": 0.2339,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2021/10/500-71353-nha-xinh-hang-trang-tri-chim-gom81-320x213.jpg"
+      },
+      {
+        "id": "69b8fe09ad9ed84f9008b6e0",
+        "name": "Gương Treo Tường Simply Brass",
+        "category": "Mirror",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 90,
+          "depth": 25,
+          "height": 60
+        },
+        "ranking_score": 0.2833,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2026/01/guong-treo-tuong-simply-brass-size-320x213.webp"
+      },
+      {
+        "id": "69b8fdf2ad9ed84f9008b619",
+        "name": "Tượng Trang Trí Angel Wing",
+        "category": "Tượng trang trí",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 38,
+          "depth": 60,
+          "height": 50
+        },
+        "ranking_score": 0.5523,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2025/12/Tuong-Trang-Tri-Abstract-Angel-–-Gold-Metal-Marble-1.webp"
+      },
+      {
+        "id": "69b8fdf2ad9ed84f9008b614",
+        "name": "Chậu Hoa Rope Im Cement Bei M 1077J",
+        "category": "Plant",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 21,
+          "depth": 21,
+          "height": 17.5
+        },
+        "ranking_score": 0.5248,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2021/10/chau-hoa-rope-im-cement-bei-m-r21-1077j-320x213.jpg"
+      },
+      {
+        "id": "69b8fdfaad9ed84f9008b656",
+        "name": "Bình Hoa Barfly Berry",
+        "category": "Plant",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 17,
+          "depth": 17,
+          "height": 23
+        },
+        "ranking_score": 0.5248,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2023/08/Binh-hoa-Barfly-Berry.jpg"
+      },
+      {
+        "id": "69b8fe06ad9ed84f9008b6bd",
+        "name": "Chậu Hoa Rope Im Cement Bei M 1078J",
+        "category": "Plant",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 30,
+          "depth": 30.5,
+          "height": 28.5
+        },
+        "ranking_score": 0.5248,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2021/10/chau-hoa-rope-im-cement-bei-m-r21-1077j.jpg"
+      },
+      {
+        "id": "69b8fe15ad9ed84f9008b749",
+        "name": "Tượng Trang Trí Lunar Balance",
+        "category": "Tượng trang trí",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 28,
+          "depth": 80,
+          "height": 31
+        },
+        "ranking_score": 0.5248,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2025/12/Tuong-Trang-Tri-Abstract-Beige-Marble-320x213.webp"
+      },
+      {
+        "id": "69b8fdfaad9ed84f9008b657",
+        "name": "Bình Glacier Smoking Grey Glass",
+        "category": "Bình trang trí",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 16,
+          "depth": 17.5,
+          "height": 35
+        },
+        "ranking_score": 0.519,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2025/12/Binh-Glacier-Smoking-Grey-Glass.webp"
+      },
+      {
+        "id": "69b8fdfbad9ed84f9008b65e",
+        "name": "Bình Hurricane Thủy Tinh Đốm Xanh Lá/Trắng",
+        "category": "Bình trang trí",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 18,
+          "depth": 18,
+          "height": 21
+        },
+        "ranking_score": 0.5172,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2021/10/500-72128-nha-xinh-hang-trang-tri-tuong-cu2-320x213.jpg"
+      },
+      {
+        "id": "69b8fdecad9ed84f9008b5e2",
+        "name": "Chậu Hoa Treo Xi Măng Taupe Nhỏ",
+        "category": "Plant",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 16,
+          "depth": 16,
+          "height": 16.5
+        },
+        "ranking_score": 0.4761,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2022/08/CHAU-HOA-SUS-CEM-TAUPE-S-16x16.5-22778-320x213.jpg"
+      },
+      {
+        "id": "69b8fe0aad9ed84f9008b6e3",
+        "name": "Tượng Trang Trí Fluid Duet",
+        "category": "Tượng trang trí",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 24,
+          "depth": 14,
+          "height": 38
+        },
+        "ranking_score": 0.4657,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2025/12/Tuong-Trang-Tri-Abstract-–-Antique-Bronze-Resin-2-320x213.webp"
+      },
+      {
+        "id": "69b8fde6ad9ed84f9008b5b4",
+        "name": "Rương Bọc Da 2 Ổ Khóa Rn",
+        "category": "Hộp lưu trữ",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 50,
+          "depth": 91,
+          "height": 76
+        },
+        "ranking_score": 0.1006,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2021/10/nha-xinh-phong-khach-hien-dai-poppy-1-1200x800.jpg"
+      },
+      {
+        "id": "69b8fe11ad9ed84f9008b728",
+        "name": "Khay Bronze Handle W Birds C529Kc",
+        "category": "Hàng trang trí khác",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 32,
+          "depth": 32,
+          "height": 35
+        },
+        "ranking_score": 0.4657,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2021/10/46294-500-chau-cay-thuong-xuan21-320x213.jpg"
+      },
+      {
+        "id": "69b8fdf1ad9ed84f9008b60d",
+        "name": "Tượng Trang Trí Looped Elevation",
+        "category": "Hàng trang trí",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 30,
+          "depth": 17.5,
+          "height": 51
+        },
+        "ranking_score": 0.4269,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2025/12/Tuong-Trang-Tri-Golden-Bronze-Alloy-Marble-320x213.webp"
+      },
+      {
+        "id": "69b8fdf2ad9ed84f9008b616",
+        "name": "Set 2 Cây Trang Trí Chim Đậu Golden Metal",
+        "category": "Plant",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 110,
+          "depth": 30,
+          "height": 30
+        },
+        "ranking_score": 0.4269,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2025/12/Bo-2-Cay-Trang-Tri-Chim-Dau-Vang.webp"
+      },
+      {
+        "id": "69b8fdfdad9ed84f9008b675",
+        "name": "Khay Vàng S",
+        "category": "Hàng trang trí khác",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 13.5,
+          "depth": 43,
+          "height": 20
+        },
+        "ranking_score": 0.4269,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2021/10/khay-vang-1-320x213.jpg"
+      },
+      {
+        "id": "69b8fe10ad9ed84f9008b71c",
+        "name": "Tượng Trang Trí Tree Tray",
+        "category": "Hàng trang trí",
+        "modelUrl": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+        "dimensions": {
+          "width": 37.5,
+          "depth": 17,
+          "height": 46
+        },
+        "ranking_score": 0.419,
+        "imageUrl": "https://nhaxinh.com/wp-content/uploads/2025/12/Tuong-Trang-Tri-Tree-Tray-3-320x213.webp"
+      }
+    ]
+  },
+  "topK": 22,
+  "minScore": 0.55,
+  "modelUrlById": {
+    "69b8fe05ad9ed84f9008b6bb": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fe13ad9ed84f9008b73c": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdffad9ed84f9008b685": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdfdad9ed84f9008b66f": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fe0cad9ed84f9008b6fb": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fe04ad9ed84f9008b6b0": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fe09ad9ed84f9008b6e0": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdf2ad9ed84f9008b619": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdf2ad9ed84f9008b614": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdfaad9ed84f9008b656": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fe06ad9ed84f9008b6bd": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fe15ad9ed84f9008b749": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdfaad9ed84f9008b657": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdfbad9ed84f9008b65e": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdecad9ed84f9008b5e2": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fe0aad9ed84f9008b6e3": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fde6ad9ed84f9008b5b4": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fe11ad9ed84f9008b728": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdf1ad9ed84f9008b60d": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdf2ad9ed84f9008b616": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fdfdad9ed84f9008b675": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+    "69b8fe10ad9ed84f9008b71c": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb"
+  }
+}

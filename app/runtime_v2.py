@@ -12,14 +12,16 @@ from .layout_reranker import choose_best_layout
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_DIR = Path(os.getenv('ARTIFACT_DIR', SERVICE_ROOT / 'artifacts'))
 
-CATEGORIES = ['sofa','chair','armchair','coffee_table','dining_table','desk','bed','nightstand','wardrobe','cabinet','shelf','tv_stand','tv','rug','bench','lamp','plant','vase','book','decor','wall_art','mirror','door','window','curtain','sink','toilet','bathtub','counter','stove','fridge','shower','unknown']
+CATEGORIES = ['sofa','chair','armchair','coffee_table','dining_table','desk','bed','nightstand','wardrobe','cabinet','shelf','tv_stand','tv','rug','bench','lamp','plant','vase','book','decor','wall_art','mirror','door','window','curtain','sink','toilet','bathtub','counter','stove','fridge','shower','ceiling_lamp','wall_planter','hanging_planter','unknown']
 SUPPORTERS = {'coffee_table','dining_table','desk','nightstand','cabinet','shelf','tv_stand','counter'}
 NEEDS_SUPPORT = {'tv','vase','book','decor','lamp','plant'}
-WALL = {'wall_art','mirror','curtain','window','door'}
+WALL = {'wall_art','mirror','curtain','window','door','wall_planter','hanging_planter'}
+CEILING = {'ceiling_lamp'}
 UNDER = {'rug'}
 LAYER = {c:'floor' for c in CATEGORIES}
 for c in ['tv','vase','book','decor','lamp','plant']: LAYER[c] = 'top_surface'
 for c in WALL: LAYER[c] = 'wall'
+for c in CEILING: LAYER[c] = 'ceiling'
 for c in UNDER: LAYER[c] = 'floor_under'
 
 FRONT_AXIS = {
@@ -30,7 +32,36 @@ FRONT_AXIS = {
 WALL_OBJECTS = {'bed','sofa','wardrobe','cabinet','shelf','tv_stand','desk','counter','sink','toilet','bathtub','stove','fridge'}
 
 
+CATEGORY_ALIASES = {
+    'flower_vase': 'vase',
+    'table_vase': 'vase',
+    'decor_vase': 'vase',
+    'vase_decor': 'vase',
+    'hanging planter': 'hanging_planter',
+    'hanging plant': 'hanging_planter',
+    'hanging_planter': 'hanging_planter',
+    'wall planter': 'wall_planter',
+    'wall plant': 'wall_planter',
+    'wall_planter': 'wall_planter',
+    'ceiling light': 'ceiling_lamp',
+    'ceiling lamp': 'ceiling_lamp',
+    'pendant light': 'ceiling_lamp',
+    'pendant lamp': 'ceiling_lamp',
+    'pendant': 'ceiling_lamp',
+    'chandelier': 'ceiling_lamp',
+    'hanging light': 'ceiling_lamp',
+    'hanging lamp': 'ceiling_lamp',
+    'table lamp': 'lamp',
+    'floor lamp': 'lamp',
+    'desk lamp': 'lamp',
+}
+
+
 def safe(x): return str(x or 'unknown').strip().lower()
+
+def canonical_category(value):
+    s = safe(value).replace('-', ' ').replace('_', ' ').strip()
+    return CATEGORY_ALIASES.get(s, CATEGORY_ALIASES.get(s.replace(' ', '_'), s.replace(' ', '_')))
 
 def fp(p):
     f = p.get('footprint') or {}
@@ -95,6 +126,9 @@ class HybridInteriorRuntimeV2:
     def _room_type(self, room):
         return safe(room.get('type', room.get('room_type', 'unknown')))
 
+    def _canonical_category(self, value):
+        return canonical_category(value)
+
     def _room_dims(self, room):
         return float(room.get('widthM', 4)), float(room.get('lengthM', 5)), float(room.get('heightM', 2.8))
 
@@ -145,10 +179,14 @@ class HybridInteriorRuntimeV2:
             'living_room': {
                 'primaryObject': 'sofa',
                 'relations': [
+                    {'a': 'sofa', 'relation': 'against_wall', 'b': 'back_wall'},
                     {'a': 'sofa', 'relation': 'face_to', 'b': 'tv'},
-                    {'a': 'coffee_table', 'relation': 'between', 'b': 'sofa_tv'},
                     {'a': 'tv', 'relation': 'face_to', 'b': 'sofa'},
+                    {'a': 'coffee_table', 'relation': 'between', 'b': 'sofa_tv'},
+                    {'a': 'coffee_table', 'relation': 'in_front_of', 'b': 'sofa'},
                     {'a': 'rug', 'relation': 'under', 'b': 'seating_group'},
+                    {'a': 'armchair', 'relation': 'near', 'b': 'coffee_table'},
+                    {'a': 'side_table', 'relation': 'near', 'b': 'armchair'},
                 ],
             },
             'kitchen': {
@@ -157,21 +195,166 @@ class HybridInteriorRuntimeV2:
                     {'a': 'counter', 'relation': 'against_wall', 'b': 'front_wall'},
                     {'a': 'sink', 'relation': 'near', 'b': 'counter'},
                     {'a': 'stove', 'relation': 'near', 'b': 'counter'},
-                    {'a': 'fridge', 'relation': 'near', 'b': 'entrance'},
+                    {'a': 'fridge', 'relation': 'near', 'b': 'counter'},
+                    {'a': 'dining_table', 'relation': 'in_free_space', 'b': 'center_zone'},
+                    {'a': 'chair', 'relation': 'face_to', 'b': 'dining_table'},
                 ],
             },
             'bathroom': {
                 'primaryObject': 'sink',
                 'relations': [
-                    {'a': 'toilet', 'relation': 'against_wall', 'b': 'side_wall'},
+                    {'a': 'toilet', 'relation': 'against_wall', 'b': 'back_wall'},
                     {'a': 'sink', 'relation': 'against_wall', 'b': 'front_wall'},
                     {'a': 'mirror', 'relation': 'above', 'b': 'sink'},
                     {'a': 'bathtub', 'relation': 'near', 'b': 'corner'},
+                    {'a': 'cabinet', 'relation': 'against_wall', 'b': 'side_wall'},
                 ],
             },
         }
         key = 'living_room' if room_type == 'livingroom' else room_type
         return {'roomType': key, **graphs.get(key, {'primaryObject': None, 'relations': []})}
+
+    def _door_lines(self, room):
+        openings = room.get('openings') or room.get('doors') or []
+        lines = []
+        for o in openings:
+            if not isinstance(o, dict):
+                continue
+            kind = safe(o.get('type', 'door'))
+            if kind not in {'door', 'opening', 'passage'}:
+                continue
+            wall = safe(o.get('wall', o.get('wallAnchor', 'front')))
+            pos = float(o.get('position', o.get('center', 0.5)) or 0.5)
+            span = float(o.get('widthM', o.get('width', 0.9)) or 0.9)
+            lines.append({'wall': wall, 'position': max(0.05, min(0.95, pos)), 'widthM': max(0.4, span)})
+        return lines
+
+    def _door_clearance_penalty(self, room, item, door_lines):
+        if not door_lines:
+            return 0.0
+        rw, rl, _ = self._room_dims(room)
+        x, z = float(item.get('x', 0.0)), float(item.get('z', 0.0))
+        w, d = self._rotated_aabb_size(item)
+        pad = max(w, d) / 2 + 0.15
+        penalty = 0.0
+        for door in door_lines:
+            if door['wall'] == 'front':
+                door_x = rw * door['position']
+                if z - d / 2 <= 0.35 and abs(x - door_x) < pad + door['widthM'] / 2:
+                    penalty += 1.0
+            elif door['wall'] == 'back':
+                door_x = rw * door['position']
+                if z + d / 2 >= rl - 0.35 and abs(x - door_x) < pad + door['widthM'] / 2:
+                    penalty += 1.0
+            elif door['wall'] == 'left':
+                door_z = rl * door['position']
+                if x - w / 2 <= 0.35 and abs(z - door_z) < pad + door['widthM'] / 2:
+                    penalty += 1.0
+            elif door['wall'] == 'right':
+                door_z = rl * door['position']
+                if x + w / 2 >= rw - 0.35 and abs(z - door_z) < pad + door['widthM'] / 2:
+                    penalty += 1.0
+        return penalty
+
+    def _hard_validate_items(self, room, items):
+        room_type = self._room_type(room)
+        cats = {safe(it.get('category')) for it in items}
+        reasons = []
+        if room_type == 'bedroom' and 'bed' not in cats:
+            reasons.append('missing_bed')
+        if room_type in {'living_room', 'livingroom'} and 'sofa' not in cats:
+            reasons.append('missing_sofa')
+        if room_type == 'kitchen' and 'counter' not in cats:
+            reasons.append('missing_counter')
+        if room_type == 'bathroom' and 'sink' not in cats:
+            reasons.append('missing_sink')
+        if room.get('openings') or room.get('doors'):
+            if any(self._door_clearance_penalty(room, it, self._door_lines(room)) > 0 for it in items if it.get('layer') == 'floor'):
+                reasons.append('blocks_door')
+        if room_type == 'bedroom' and 'nightstand' in cats and 'bed' not in cats:
+            reasons.append('nightstand_without_bed')
+        if room_type in {'living_room', 'livingroom'} and 'coffee_table' in cats and 'sofa' not in cats:
+            reasons.append('coffee_table_without_sofa')
+        return reasons
+
+    def _composition_policy(self, room_type):
+        room_type = 'living_room' if room_type == 'livingroom' else room_type
+        return {
+            'bedroom': {
+                'primary': 'bed', 'secondary': ['nightstand', 'bench'], 'accent': ['rug', 'chair'],
+                'style_bias': 'balanced_symmetry', 'density': .24, 'focal': 'back_wall', 'zones': ['back_band', 'bedside', 'foot_band', 'right_band', 'corner']
+            },
+            'living_room': {
+                'primary': 'sofa', 'secondary': ['tv', 'coffee_table'], 'accent': ['rug', 'armchair'],
+                'style_bias': 'center_axis', 'density': .22, 'focal': 'sofa_tv_axis', 'zones': ['back_band', 'front_band', 'center', 'corner', 'reading_corner']
+            },
+            'kitchen': {
+                'primary': 'counter', 'secondary': ['sink', 'stove', 'fridge'], 'accent': ['dining_table', 'chair'],
+                'style_bias': 'workflow', 'density': .26, 'focal': 'work_triangle', 'zones': ['front_band', 'work_zone', 'dining_zone', 'entry_zone', 'storage_zone']
+            },
+            'bathroom': {
+                'primary': 'sink', 'secondary': ['toilet', 'bathtub'], 'accent': ['mirror', 'cabinet'],
+                'style_bias': 'clear_path', 'density': .2, 'focal': 'wall_function', 'zones': ['front_band', 'back_band', 'corner', 'storage_zone']
+            },
+        }.get(room_type, {'primary': None, 'secondary': [], 'accent': [], 'style_bias': 'generic', 'density': .22, 'focal': 'center', 'zones': ['center']})
+
+    def _intent_variants(self, room_type, policy):
+        room_type = 'living_room' if room_type == 'livingroom' else room_type
+        if room_type == 'bedroom':
+            return [
+                {'name': 'balanced_symmetry', 'bias': {'symmetry': 1.35, 'spacing': 1.0, 'decor': 0.9, 'clear_path': 1.0, 'focal': 1.0}},
+                {'name': 'cozy', 'bias': {'symmetry': 0.95, 'spacing': 0.92, 'decor': 1.35, 'clear_path': 0.95, 'focal': 1.05}},
+                {'name': 'minimal', 'bias': {'symmetry': 1.05, 'spacing': 1.18, 'decor': 0.55, 'clear_path': 1.2, 'focal': 0.9}},
+                {'name': 'workflow', 'bias': {'symmetry': 0.9, 'spacing': 1.0, 'decor': 0.7, 'clear_path': 1.25, 'focal': 1.0}},
+            ]
+        if room_type in {'living_room', 'livingroom'}:
+            return [
+                {'name': 'balanced_symmetry', 'bias': {'symmetry': 1.3, 'spacing': 1.0, 'decor': 0.95, 'clear_path': 1.0, 'focal': 1.05}},
+                {'name': 'cozy', 'bias': {'symmetry': 0.9, 'spacing': 0.92, 'decor': 1.3, 'clear_path': 0.95, 'focal': 1.1}},
+                {'name': 'minimal', 'bias': {'symmetry': 1.0, 'spacing': 1.15, 'decor': 0.55, 'clear_path': 1.2, 'focal': 0.95}},
+                {'name': 'workflow', 'bias': {'symmetry': 0.85, 'spacing': 1.05, 'decor': 0.75, 'clear_path': 1.25, 'focal': 1.0}},
+            ]
+        if room_type == 'kitchen':
+            return [
+                {'name': 'balanced_symmetry', 'bias': {'symmetry': 1.05, 'spacing': 1.0, 'decor': 0.7, 'clear_path': 1.0, 'focal': 1.0}},
+                {'name': 'cozy', 'bias': {'symmetry': 0.9, 'spacing': 0.95, 'decor': 1.15, 'clear_path': 0.95, 'focal': 1.0}},
+                {'name': 'minimal', 'bias': {'symmetry': 1.0, 'spacing': 1.15, 'decor': 0.5, 'clear_path': 1.25, 'focal': 0.95}},
+                {'name': 'workflow', 'bias': {'symmetry': 0.9, 'spacing': 1.05, 'decor': 0.65, 'clear_path': 1.35, 'focal': 1.1}},
+            ]
+        if room_type == 'bathroom':
+            return [
+                {'name': 'balanced_symmetry', 'bias': {'symmetry': 1.15, 'spacing': 1.0, 'decor': 0.8, 'clear_path': 1.0, 'focal': 1.0}},
+                {'name': 'cozy', 'bias': {'symmetry': 0.9, 'spacing': 0.95, 'decor': 1.15, 'clear_path': 0.98, 'focal': 1.0}},
+                {'name': 'minimal', 'bias': {'symmetry': 1.0, 'spacing': 1.15, 'decor': 0.45, 'clear_path': 1.25, 'focal': 0.95}},
+                {'name': 'workflow', 'bias': {'symmetry': 0.85, 'spacing': 1.0, 'decor': 0.65, 'clear_path': 1.3, 'focal': 1.05}},
+            ]
+        return [{'name': policy.get('style_bias', 'generic'), 'bias': {'symmetry': 1.0, 'spacing': 1.0, 'decor': 1.0, 'clear_path': 1.0, 'focal': 1.0}}]
+
+    def _room_zones(self, room):
+        rw, rl, _ = self._room_dims(room)
+        return {
+            'back_band': {'x1': 0.08, 'z1': rl * 0.68, 'x2': rw - 0.08, 'z2': rl - 0.08},
+            'front_band': {'x1': 0.08, 'z1': 0.08, 'x2': rw - 0.08, 'z2': rl * 0.32},
+            'center': {'x1': rw * 0.2, 'z1': rl * 0.28, 'x2': rw * 0.8, 'z2': rl * 0.72},
+            'bedside': {'x1': 0.1, 'z1': rl * 0.45, 'x2': rw - 0.1, 'z2': rl * 0.65},
+            'foot_band': {'x1': rw * 0.2, 'z1': rl * 0.18, 'x2': rw * 0.8, 'z2': rl * 0.42},
+            'right_band': {'x1': rw * 0.64, 'z1': 0.1, 'x2': rw - 0.08, 'z2': rl - 0.1},
+            'corner': {'x1': rw * 0.68, 'z1': rl * 0.42, 'x2': rw - 0.08, 'z2': rl - 0.08},
+            'work_zone': {'x1': 0.08, 'z1': 0.08, 'x2': rw * 0.76, 'z2': rl * 0.35},
+            'dining_zone': {'x1': rw * 0.56, 'z1': rl * 0.45, 'x2': rw - 0.08, 'z2': rl - 0.08},
+            'entry_zone': {'x1': rw * 0.7, 'z1': 0.08, 'x2': rw - 0.08, 'z2': rl * 0.38},
+            'storage_zone': {'x1': rw * 0.68, 'z1': rl * 0.2, 'x2': rw - 0.08, 'z2': rl * 0.72},
+            'reading_corner': {'x1': rw * 0.68, 'z1': rl * 0.24, 'x2': rw - 0.08, 'z2': rl * 0.58},
+        }
+
+    def _zone_center(self, room, zone_name):
+        zones = self._room_zones(room)
+        zone = zones.get(zone_name) or zones['center']
+        return (zone['x1'] + zone['x2']) / 2, (zone['z1'] + zone['z2']) / 2
+
+    def _place_in_zone(self, room, item, zone_name, rotation_y=None, wall_anchor=None, relations=None, facing_target=None, reason=None):
+        x, z = self._zone_center(room, zone_name)
+        return self._place_item(room, item, x, z, rotation_y if rotation_y is not None else float(item.get('rotationY', 0.0)), wall_anchor, zone_name, relations, facing_target, reason)
 
     def _back_wall_center(self, room):
         rw, rl, _ = self._room_dims(room)
@@ -510,7 +693,7 @@ class HybridInteriorRuntimeV2:
         return stoi.get(safe(value), stoi.get('unknown', 0))
 
     def item_row(self, room, p):
-        cat = safe(p.get('category', 'unknown'))
+        cat = self._canonical_category(p.get('category', 'unknown'))
         f = fp(p)
         rw = float(room.get('widthM', 4)); rl = float(room.get('lengthM', 5)); rh = float(room.get('heightM', 2.8))
         area = max(rw * rl, 1e-6)
@@ -676,7 +859,7 @@ class HybridInteriorRuntimeV2:
 
             item = dict(p)
             item['productId'] = str(p.get('productId', p.get('id', f'item_{i}')))
-            item['category'] = safe(p.get('category', 'unknown'))
+            item['category'] = self._canonical_category(p.get('category', 'unknown'))
             item['footprint'] = f
             item['keepProbability'] = float((float(p.get('keepProbability', .5) or .5) + keep_model) / 2.0)
             item['x'] = x; item['y'] = y; item['z'] = z
@@ -696,7 +879,7 @@ class HybridInteriorRuntimeV2:
     def prior(self, room, products, k=0):
         rw = float(room.get('widthM', 4)); rl = float(room.get('lengthM', 5)); items = []; i = 0
         for p in products:
-            cat = safe(p.get('category')); f = fp(p); it = dict(p); it['category'] = cat; it['footprint'] = f; it['productId'] = str(p.get('productId', p.get('id', f'item_{len(items)}'))); it['layer'] = LAYER.get(cat, 'floor')
+            cat = self._canonical_category(p.get('category')); f = fp(p); it = dict(p); it['category'] = cat; it['footprint'] = f; it['productId'] = str(p.get('productId', p.get('id', f'item_{len(items)}'))); it['layer'] = LAYER.get(cat, 'floor')
             if it['layer'] == 'wall':
                 it.update(x=rw/2, z=.05, y=1.4, wallAnchor=['front','back','left','right'][k%4], placementZone='front_wall')
             elif it['layer'] == 'floor_under':
@@ -709,44 +892,227 @@ class HybridInteriorRuntimeV2:
             it['rotationY'] = float((k % 4) * math.pi / 2); items.append(it)
         return items
 
+    def _template_variant(self, room, base_items, variant_idx):
+        items = []
+        room_type = self._room_type(room)
+        door_lines = self._door_lines(room)
+        for it in base_items:
+            q = dict(it)
+            cat = safe(q.get('category'))
+            if cat in {'bed', 'sofa', 'counter', 'sink', 'toilet', 'tv'}:
+                q['rotationY'] = self._norm_angle(float(q.get('rotationY', 0.0)))
+            elif q.get('layer') == 'ceiling':
+                q['x'], q['z'] = self._center(room)
+                q['y'] = self._room_dims(room)[2] - fp(q)['heightM'] / 2 - 0.12
+                q['rotationY'] = 0.0
+            elif q.get('layer') == 'wall':
+                wall = q.get('wallAnchor') or 'front'
+                q['x'], q['z'] = self._wall_position(room, wall, q, 0.5)
+                q['y'] = max(float(q.get('y', 1.4)), 1.2)
+                q['rotationY'] = self._rotation_from_wall(room, q, wall)
+            elif q.get('layer') == 'floor':
+                dx = ((variant_idx % 3) - 1) * 0.05
+                dz = (((variant_idx // 3) % 3) - 1) * 0.05
+                if room_type == 'living_room' and cat in {'coffee_table', 'armchair', 'side_table'}:
+                    dx *= 1.4; dz *= 1.4
+                elif room_type == 'kitchen' and cat in {'dining_table', 'chair'}:
+                    dx *= 1.3; dz *= 1.3
+                elif room_type == 'bathroom' and cat in {'cabinet', 'bathtub'}:
+                    dx *= 0.7; dz *= 0.7
+                q['x'] = float(q.get('x', 0.0)) + dx
+                q['z'] = float(q.get('z', 0.0)) + dz
+                if q.get('facingTarget') == 'room_center':
+                    q['rotationY'] = self._face_target_angle(q, self._center(room))
+            elif q.get('layer') == 'wall' and variant_idx > 0:
+                q['wallAnchor'] = ['front', 'right', 'back', 'left'][variant_idx % 4]
+            if self._door_clearance_penalty(room, q, door_lines) > 0:
+                q['x'] = float(q.get('x', 0.0)) + (0.18 if variant_idx % 2 == 0 else -0.18)
+                q['z'] = float(q.get('z', 0.0)) + (0.12 if variant_idx % 2 == 0 else -0.12)
+            items.append(q)
+        return items
+
+    def _door_metadata(self, room):
+        openings = room.get('openings') or room.get('doors') or []
+        out = []
+        for o in openings:
+            if not isinstance(o, dict):
+                continue
+            kind = safe(o.get('type', 'door'))
+            if kind not in {'door', 'opening', 'passage'}:
+                continue
+            out.append({
+                'wall': safe(o.get('wall', o.get('wallAnchor', 'front'))),
+                'position': float(o.get('position', o.get('center', 0.5)) or 0.5),
+                'widthM': float(o.get('widthM', o.get('width', 0.9)) or 0.9),
+            })
+        return out
+
+    def _avoid_door_zones(self, room, item, door_meta):
+        if not door_meta:
+            return item
+        rw, rl, _ = self._room_dims(room)
+        x, z = float(item.get('x', 0.0)), float(item.get('z', 0.0))
+        w, d = self._rotated_aabb_size(item)
+        for door in door_meta:
+            wall = door['wall']
+            pos = max(0.05, min(0.95, float(door['position'])))
+            width = max(0.4, float(door['widthM']))
+            if wall == 'front' and z - d / 2 < 0.42:
+                x = x + (width / 2 + w / 2 + 0.25) if x < rw * pos else x - (width / 2 + w / 2 + 0.25)
+                z = max(z, d / 2 + 0.55)
+            elif wall == 'back' and z + d / 2 > rl - 0.42:
+                x = x + (width / 2 + w / 2 + 0.25) if x < rw * pos else x - (width / 2 + w / 2 + 0.25)
+                z = min(z, rl - d / 2 - 0.55)
+            elif wall == 'left' and x - w / 2 < 0.42:
+                z = z + (width / 2 + d / 2 + 0.25) if z < rl * pos else z - (width / 2 + d / 2 + 0.25)
+                x = max(x, w / 2 + 0.55)
+            elif wall == 'right' and x + w / 2 > rw - 0.42:
+                z = z + (width / 2 + d / 2 + 0.25) if z < rl * pos else z - (width / 2 + d / 2 + 0.25)
+                x = min(x, rw - w / 2 - 0.55)
+        item['x'], item['z'] = clamp(x, w / 2 + 0.05, rw - w / 2 - 0.05), clamp(z, d / 2 + 0.05, rl - d / 2 - 0.05)
+        return item
+
+    def _apply_intent_bias(self, room, item, intent, policy):
+        cat = safe(item.get('category'))
+        bias = intent.get('bias', {})
+        room_type = self._room_type(room)
+        if cat in {'bed', 'sofa', 'counter', 'sink', 'tv'}:
+            item['rotationY'] = self._norm_angle(float(item.get('rotationY', 0.0)) + (0.0 if bias.get('focal', 1.0) >= 1.0 else 0.08))
+        if intent['name'] == 'balanced_symmetry':
+            if room_type == 'bedroom' and cat == 'nightstand':
+                item['z'] = float(item.get('z', 0.0)) + (-0.02 if item.get('placementZone') == 'bedside' else 0.02)
+            if room_type in {'living_room', 'livingroom'} and cat in {'armchair', 'chair'}:
+                item['x'] = float(item.get('x', 0.0)) + (0.03 if item.get('placementZone') == 'reading_corner' else -0.03)
+        elif intent['name'] == 'cozy':
+            if cat in {'rug', 'lamp', 'plant', 'chair', 'armchair'}:
+                item['x'] = float(item.get('x', 0.0)) + 0.04
+                item['z'] = float(item.get('z', 0.0)) - 0.03
+        elif intent['name'] == 'minimal':
+            if cat in {'rug', 'decor', 'plant', 'lamp'}:
+                item['x'] = float(item.get('x', 0.0)) - 0.05
+                item['z'] = float(item.get('z', 0.0)) + 0.02
+        elif intent['name'] == 'workflow':
+            if room_type == 'kitchen' and cat in {'sink', 'stove', 'fridge', 'counter'}:
+                item['z'] = float(item.get('z', 0.0)) - 0.02
+        return item
+
     def _make_candidates_from_transformer(self, room, selected, top_k):
         template = self._template_layout(room, selected)
         base = template or self.transformer_layout(room, selected)
         if not base:
             return [self.prior(room, selected, k) for k in range(max(1, top_k))]
+        room_type = self._room_type(room)
+        door_meta = self._door_metadata(room)
+        policy = self._composition_policy(room_type)
+        intents = self._intent_variants(room_type, policy)
         candidates = []
-        for k in range(max(1, top_k)):
-            items = []
-            for idx, it in enumerate(base):
-                q = dict(it)
-                if q.get('layer') == 'floor' and safe(q.get('category')) not in {'bed','sofa','tv','wardrobe','counter','sink','toilet'}:
-                    dx = ((k % 3) - 1) * 0.06
-                    dz = (((k // 3) % 3) - 1) * 0.06
-                    q['x'] = float(q['x']) + dx
-                    q['z'] = float(q['z']) + dz
-                    if q.get('facingTarget') == 'room_center':
-                        q['rotationY'] = self._face_target_angle(q, self._center(room))
-                elif q.get('layer') == 'wall' and k > 0 and not template:
-                    q['wallAnchor'] = ['front','right','back','left'][k % 4]
-                q['rotationY'] = self._norm_angle(float(q.get('rotationY', 0.0)))
-                items.append(q)
-            candidates.append(items)
+        per_intent = max(1, top_k // max(1, len(intents)))
+        for intent_idx, intent in enumerate(intents):
+            for k in range(per_intent):
+                variant_idx = intent_idx * per_intent + k
+                cand = self._template_variant(room, base, variant_idx)
+                for it in cand:
+                    cat = safe(it.get('category'))
+                    if room_type in {'living_room', 'livingroom'} and cat == 'coffee_table':
+                        it['x'] = float(it.get('x', 0.0)) + ((variant_idx % 2) * 0.04)
+                        it['z'] = float(it.get('z', 0.0)) - ((variant_idx % 2) * 0.03)
+                    elif room_type == 'kitchen' and cat in {'dining_table', 'chair'}:
+                        it['x'] = float(it.get('x', 0.0)) + ((variant_idx % 3) - 1) * 0.08
+                        it['z'] = float(it.get('z', 0.0)) + (((variant_idx // 3) % 2) - 0.5) * 0.06
+                    elif room_type == 'bathroom' and cat in {'cabinet', 'bathtub', 'mirror'}:
+                        it['z'] = float(it.get('z', 0.0)) + ((variant_idx % 2) * 0.03)
+                    self._apply_intent_bias(room, it, intent, policy)
+                    if self._door_clearance_penalty(room, it, door_meta) > 0:
+                        self._avoid_door_zones(room, it, door_meta)
+                cand_score_hint = intent['name']
+                for it in cand:
+                    it['designIntent'] = cand_score_hint
+                candidates.append(cand)
         return candidates
+
+    def _relation_score_for_item(self, room, item, items):
+        cat = safe(item.get('category'))
+        room_type = self._room_type(room)
+        score = 0.5
+        if room_type == 'bedroom':
+            if cat == 'bed' and item.get('wallAnchor') == 'back':
+                score += 0.25
+            if cat == 'nightstand' and item.get('placementZone') == 'bedside':
+                score += 0.2
+            if cat == 'rug' and item.get('placementZone') == 'under_bed':
+                score += 0.25
+            if cat == 'bench' and item.get('placementZone') == 'foot_of_bed':
+                score += 0.2
+            if cat in {'wardrobe', 'cabinet'} and item.get('wallAnchor') == 'right':
+                score += 0.15
+        elif room_type in {'living_room', 'livingroom'}:
+            if cat == 'sofa' and item.get('wallAnchor') == 'back':
+                score += 0.2
+            if cat == 'tv' and item.get('wallAnchor') == 'front':
+                score += 0.22
+            if cat == 'coffee_table' and item.get('placementZone') in {'center', 'side_zone'}:
+                score += 0.18
+            if cat == 'rug' and item.get('placementZone') == 'under_seating':
+                score += 0.22
+            if cat in {'armchair', 'chair'} and item.get('placementZone') == 'reading_corner':
+                score += 0.16
+        elif room_type == 'kitchen':
+            if cat == 'counter' and item.get('wallAnchor') == 'front':
+                score += 0.22
+            if cat in {'sink', 'stove'} and item.get('placementZone') in {'sink_zone', 'cooking_zone'}:
+                score += 0.2
+            if cat == 'fridge' and item.get('placementZone') == 'entry':
+                score += 0.15
+            if cat == 'dining_table' and item.get('placementZone') == 'dining_zone':
+                score += 0.18
+            if cat == 'chair' and item.get('placementZone') == 'dining_zone':
+                score += 0.16
+        elif room_type == 'bathroom':
+            if cat == 'toilet' and item.get('wallAnchor') == 'back':
+                score += 0.22
+            if cat == 'sink' and item.get('wallAnchor') == 'front':
+                score += 0.2
+            if cat == 'mirror' and item.get('placementZone') == 'wall':
+                score += 0.16
+            if cat in {'bathtub', 'shower'} and item.get('placementZone') == 'corner':
+                score += 0.18
+            if cat in {'cabinet', 'shelf'} and item.get('placementZone') in {'storage', 'side_wall'}:
+                score += 0.12
+        if item.get('facingTarget') == 'room_center':
+            score += 0.05
+        if item.get('relations'):
+            score += min(0.1, 0.02 * len(item['relations']))
+        return round(min(1.0, score), 4)
 
     def _layout_quality_metrics(self, room, items, base_metrics):
         rw, rl, _ = self._room_dims(room)
-        collision_count, outside_count = 0, 0
+        room_type = self._room_type(room)
+        door_lines = self._door_lines(room)
+        collision_count, outside_count, door_penalty = 0, 0, 0
         floor = [it for it in items if it.get('layer', 'floor') == 'floor']
+        item_relation_scores = []
         for it in floor:
             x1, z1, x2, z2 = self._aabb_from_poly(self._rotated_rect(it))
             outside_count += int(x1 < -1e-3 or z1 < -1e-3 or x2 > rw + 1e-3 or z2 > rl + 1e-3)
+            door_penalty += int(self._door_clearance_penalty(room, it, door_lines) > 0)
+            item_relation_scores.append(self._relation_score_for_item(room, it, items))
         for i in range(len(floor)):
             ax1, az1, ax2, az2 = self._aabb_from_poly(self._rotated_rect(floor[i]))
             for j in range(i + 1, len(floor)):
                 bx1, bz1, bx2, bz2 = self._aabb_from_poly(self._rotated_rect(floor[j]))
                 collision_count += int(min(ax2, bx2) > max(ax1, bx1) and min(az2, bz2) > max(az1, bz1))
-        relation_total = sum(len(it.get('relations') or []) for it in items) or 1
-        relation_score = max(0.0, 1.0 - 0.08 * base_metrics.get('penalties', {}).get('wall', 0) - 0.12 * outside_count)
+
+        relation_graph = self._relation_graph(room_type)
+        relation_total = max(1, len(relation_graph.get('relations', [])))
+        relation_hits = 0
+        for rel in relation_graph.get('relations', []):
+            a = next((it for it in items if safe(it.get('category')) == safe(rel.get('a'))), None)
+            b = next((it for it in items if safe(it.get('category')) == safe(rel.get('b')) or safe(it.get('target')) == safe(rel.get('b'))), None)
+            if a and b:
+                relation_hits += 1
+        layout_relation_score = max(0.0, min(1.0, relation_hits / relation_total - 0.08 * base_metrics.get('penalties', {}).get('wall', 0) - 0.12 * outside_count - 0.1 * door_penalty))
+        relation_score = max(layout_relation_score, sum(item_relation_scores) / max(1, len(item_relation_scores)))
+
         facing_items = [it for it in items if it.get('facingTarget')]
         facing_score = 1.0
         for it in facing_items:
@@ -755,7 +1121,7 @@ class HybridInteriorRuntimeV2:
                 expected = self._face_target_angle(it, target)
                 err = abs(self._norm_angle(float(it.get('rotationY', 0.0)) - expected)) / math.pi
                 facing_score -= err / max(1, len(facing_items))
-        clearance_score = max(0.0, 1.0 - 0.12 * collision_count - 0.08 * outside_count - 0.04 * len(items) / max(rw * rl, 1.0))
+        clearance_score = max(0.0, 1.0 - 0.12 * collision_count - 0.08 * outside_count - 0.08 * door_penalty - 0.04 * len(items) / max(rw * rl, 1.0))
         wall_alignment_score = max(0.0, 1.0 - 0.08 * sum(1 for it in items if safe(it.get('category')) in WALL_OBJECTS and not it.get('wallAnchor')))
         symmetry_score = 0.75
         stands = [it for it in items if safe(it.get('category')) == 'nightstand']
@@ -766,9 +1132,11 @@ class HybridInteriorRuntimeV2:
             symmetry_score = max(0.0, 1.0 - abs(ds[0] - ds[1]))
         room_balance_score = max(0.0, 1.0 - abs(sum(float(it.get('x', rw / 2)) for it in items) / max(1, len(items)) - rw / 2) / max(rw / 2, 1e-6)) if items else 0.0
         aesthetic_score = max(0.0, min(1.0, 0.22 * relation_score + 0.22 * facing_score + 0.18 * clearance_score + 0.16 * wall_alignment_score + 0.12 * symmetry_score + 0.10 * room_balance_score))
+        item_scores = {str(it.get('productId', i)): self._relation_score_for_item(room, it, items) for i, it in enumerate(items)}
         return {
             'collisionCount': collision_count,
             'outsideCount': outside_count,
+            'doorPenaltyCount': door_penalty,
             'relationScore': round(relation_score, 4),
             'facingScore': round(max(0.0, min(1.0, facing_score)), 4),
             'clearanceScore': round(clearance_score, 4),
@@ -777,7 +1145,38 @@ class HybridInteriorRuntimeV2:
             'roomBalanceScore': round(room_balance_score, 4),
             'aestheticScore': round(aesthetic_score, 4),
             'relationCount': relation_total,
+            'roomType': room_type,
+            'itemRelationScores': item_scores,
         }
+
+    def _camera_positions(self, room):
+        rw, rl, _ = self._room_dims(room)
+        return {
+            'front': (rw / 2, -max(rw, rl) * 0.55),
+            'back': (rw / 2, rl + max(rw, rl) * 0.55),
+            'left': (-max(rw, rl) * 0.55, rl / 2),
+            'right': (rw + max(rw, rl) * 0.55, rl / 2),
+            'corner': (-max(rw, rl) * 0.35, -max(rw, rl) * 0.35),
+        }
+
+    def _visibility_from_camera(self, room, items, camera_name='front'):
+        cams = self._camera_positions(room)
+        cam = cams.get(camera_name, cams['front'])
+        rw, rl, _ = self._room_dims(room)
+        visible = 0
+        total = 0
+        for it in items:
+            if it.get('layer') == 'wall':
+                continue
+            total += 1
+            x, z = float(it.get('x', 0.0)), float(it.get('z', 0.0))
+            dist = ((x - cam[0]) ** 2 + (z - cam[1]) ** 2) ** 0.5
+            center_bias = 1.0 - abs(x - rw / 2) / max(rw / 2, 1e-6)
+            depth_bias = 1.0 - abs(z - rl / 2) / max(rl / 2, 1e-6)
+            facing_bonus = 0.08 if it.get('facingTarget') in {'room_center', 'tv', 'sofa', 'bed'} else 0.0
+            score = max(0.0, min(1.0, 1.0 / (1.0 + dist) + 0.25 * center_bias + 0.25 * depth_bias + facing_bonus))
+            visible += score
+        return round(visible / max(1, total), 4)
 
     def _format_item_for_fe(self, item):
         q = dict(item)
@@ -802,6 +1201,8 @@ class HybridInteriorRuntimeV2:
         top_k = int(opts.get('topK', 8))
         room_type = self._room_type(room)
         relation_graph = self._relation_graph(room_type)
+        composition_policy = self._composition_policy(room_type)
+        room_zones = self._room_zones(room)
 
         scored = self.score_products(room, products)
         selected = [p for p in scored if p.get('keepProbability', 0) >= min_score] or sorted(scored, key=lambda x: x.get('keepProbability', 0), reverse=True)[:min(6, len(scored))]
@@ -811,10 +1212,19 @@ class HybridInteriorRuntimeV2:
         candidates = []
         for raw_items in raw_candidates:
             items, rejected, metrics = fast_solve_layout(room, raw_items)
+            hard_failures = self._hard_validate_items(room, items)
             metrics.update(self._layout_quality_metrics(room, items, metrics))
             metrics['setProbability'] = set_score
             metrics['usedLayoutModel'] = bool(self.layout_model is not None)
             metrics['usedRoomTemplate'] = bool(self._template_layout(room, selected))
+            metrics['hasDoorMetadata'] = bool(self._door_metadata(room))
+            metrics['compositionPolicy'] = composition_policy
+            metrics['roomZones'] = room_zones
+            metrics['hardFailures'] = hard_failures
+            metrics['hardPass'] = not hard_failures
+            metrics['visibilityFront'] = self._visibility_from_camera(room, items, 'front')
+            metrics['visibilityCorner'] = self._visibility_from_camera(room, items, 'corner')
+            metrics['cameraVisibilityScore'] = round((metrics['visibilityFront'] + metrics['visibilityCorner']) / 2, 4)
             if needs_heavy_check(items, metrics):
                 ok, heavy = heavy_check_layout(room, items)
                 metrics['heavyPhysics'] = heavy
@@ -822,6 +1232,9 @@ class HybridInteriorRuntimeV2:
             else:
                 metrics['heavyPhysics'] = {'skipped': True}
                 metrics['heavyPassed'] = True
+            if hard_failures:
+                metrics['layoutScore'] = 0.0
+                metrics['hardRejected'] = True
             candidates.append({'items': items, 'rejected': rejected, 'metrics': metrics})
 
         best = choose_best_layout(candidates)
@@ -846,5 +1259,7 @@ class HybridInteriorRuntimeV2:
                 'setProbability': set_score,
                 'runtime': 'HybridInteriorRuntimeV2',
                 'usedLayoutModel': bool(self.layout_model is not None),
+                'compositionPolicy': composition_policy,
+                'roomZones': room_zones,
             }
         }
