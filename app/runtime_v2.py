@@ -973,6 +973,64 @@ class HybridInteriorRuntimeV2:
             })
         return out
 
+    def _hard_reject_reason(self, room, item, door_meta):
+        cat = self._canonical_category(item.get('category', 'unknown'))
+        if cat == 'nightstand' and self._room_type(room) != 'bedroom':
+            return 'nightstand_outside_bedroom'
+        if cat == 'coffee_table' and self._room_type(room) not in {'living_room', 'livingroom'}:
+            return 'coffee_table_outside_living_room'
+        if cat == 'mirror' and item.get('layer') != 'wall':
+            return 'mirror_not_wall'
+        if cat == 'ceiling_lamp' and item.get('layer') != 'ceiling':
+            return 'ceiling_lamp_not_ceiling'
+        if cat in {'wall_planter', 'hanging_planter'} and item.get('layer') not in {'wall', 'ceiling'}:
+            return 'planter_wrong_layer'
+        if door_meta and self._door_clearance_penalty(room, item, door_meta) > 0 and item.get('layer') == 'floor':
+            return 'blocks_door'
+        return None
+
+    def _soft_item_score(self, room, item):
+        room_type = self._room_type(room)
+        cat = self._canonical_category(item.get('category', 'unknown'))
+        score = 0.4
+        if room_type == 'bedroom':
+            if cat == 'bed': score += 0.25
+            if cat == 'nightstand' and item.get('placementZone') == 'bedside': score += 0.2
+            if cat == 'rug' and item.get('placementZone') == 'under_bed': score += 0.18
+            if cat == 'bench' and item.get('placementZone') == 'foot_of_bed': score += 0.12
+        elif room_type in {'living_room', 'livingroom'}:
+            if cat == 'sofa': score += 0.25
+            if cat == 'coffee_table' and item.get('placementZone') == 'center': score += 0.2
+            if cat == 'rug' and item.get('placementZone') == 'under_seating': score += 0.18
+            if cat in {'armchair', 'chair'} and item.get('placementZone') == 'reading_corner': score += 0.12
+        elif room_type == 'kitchen':
+            if cat == 'counter': score += 0.25
+            if cat in {'sink', 'stove'} and item.get('placementZone') in {'sink_zone', 'cooking_zone'}: score += 0.18
+            if cat == 'fridge' and item.get('placementZone') == 'entry': score += 0.12
+        elif room_type == 'bathroom':
+            if cat == 'sink': score += 0.2
+            if cat == 'mirror' and item.get('placementZone') == 'wall': score += 0.18
+            if cat == 'toilet' and item.get('placementZone') == 'toilet_zone': score += 0.18
+            if cat in {'bathtub', 'shower'} and item.get('placementZone') == 'corner': score += 0.15
+        if item.get('facingTarget') == 'room_center':
+            score += 0.05
+        if item.get('relations'):
+            score += min(0.1, 0.02 * len(item['relations']))
+        return round(min(1.0, score), 4)
+
+    def _filter_and_select_items(self, room, items):
+        door_meta = self._door_metadata(room)
+        kept, rejected = [], []
+        for item in items:
+            reason = self._hard_reject_reason(room, item, door_meta)
+            if reason:
+                item['rejectReason'] = reason
+                rejected.append(item)
+                continue
+            item['softItemScore'] = self._soft_item_score(room, item)
+            kept.append(item)
+        return kept, rejected
+
     def _avoid_door_zones(self, room, item, door_meta):
         if not door_meta:
             return item
@@ -1238,6 +1296,8 @@ class HybridInteriorRuntimeV2:
         candidates = []
         for raw_items in raw_candidates:
             items, rejected, metrics = fast_solve_layout(room, raw_items)
+            items, soft_rejected = self._filter_and_select_items(room, items)
+            rejected.extend(soft_rejected)
             hard_failures = self._hard_validate_items(room, items)
             metrics.update(self._layout_quality_metrics(room, items, metrics))
             metrics['setProbability'] = set_score
@@ -1252,6 +1312,7 @@ class HybridInteriorRuntimeV2:
             metrics['visibilityFront'] = self._visibility_from_camera(room, items, 'front')
             metrics['visibilityCorner'] = self._visibility_from_camera(room, items, 'corner')
             metrics['cameraVisibilityScore'] = round((metrics['visibilityFront'] + metrics['visibilityCorner']) / 2, 4)
+            metrics['softItemScore'] = round(sum(float(it.get('softItemScore', 0.0)) for it in items) / max(1, len(items)), 4)
             if needs_heavy_check(items, metrics):
                 ok, heavy = heavy_check_layout(room, items)
                 metrics['heavyPhysics'] = heavy

@@ -9,8 +9,10 @@ def score_candidate_layout(items, rejected, metrics):
     s -= .08 * float(metrics.get('collisionCount', 0)) + .08 * float(metrics.get('outsideCount', 0)) + .06 * float(metrics.get('doorPenaltyCount', 0))
     s += intent_bonus
     s += .14 * float(metrics.get('cameraVisibilityScore', .5)) + .06 * float(metrics.get('visibilityFront', .5))
+    s += .08 * float(metrics.get('softItemScore', .5))
     if items:
         s += .1 * sum(float(x.get('keepProbability', .5)) for x in items) / len(items)
+        s += .05 * sum(float(x.get('softItemScore', .5)) for x in items) / len(items)
     return max(0, min(1, s))
 
 
