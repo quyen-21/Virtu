@@ -282,8 +282,8 @@ class HybridInteriorRuntimeV2:
         if room_type == 'bedroom' and 'bed' in cats:
             if not any(it.get('placementZone') == 'bedside' for it in items if safe(it.get('category')) == 'nightstand'):
                 reasons.append('missing_bedside_group')
-            if not any(safe(it.get('category')) == 'rug' and it.get('placementZone') == 'under_bed' for it in items):
-                reasons.append('missing_bed_rug_group')
+            if any(safe(it.get('category')) in TOP_SURFACE and not it.get('supportSurfaceId') for it in items):
+                reasons.append('top_surface_without_support')
         if room_type in {'living_room', 'livingroom'} and 'sofa' in cats:
             if not any(it.get('placementZone') == 'center' for it in items if safe(it.get('category')) == 'coffee_table'):
                 reasons.append('missing_coffee_table_group')
@@ -291,6 +291,8 @@ class HybridInteriorRuntimeV2:
                 reasons.append('missing_seating_rug_group')
             if 'armchair' in cats and not any(it.get('placementZone') == 'reading_corner' for it in items if safe(it.get('category')) in {'armchair', 'chair'}):
                 reasons.append('missing_armchair_group')
+            if any(safe(it.get('category')) in TOP_SURFACE and not it.get('supportSurfaceId') for it in items):
+                reasons.append('top_surface_without_support')
         if room_type == 'kitchen' and 'counter' in cats:
             if not any(safe(it.get('category')) == 'sink' and it.get('placementZone') == 'sink_zone' for it in items):
                 reasons.append('missing_sink_group')
@@ -334,17 +336,17 @@ class HybridInteriorRuntimeV2:
         room_type = 'living_room' if room_type == 'livingroom' else room_type
         if room_type == 'bedroom':
             return [
-                {'name': 'balanced_symmetry', 'bias': {'symmetry': 1.35, 'spacing': 1.0, 'decor': 0.9, 'clear_path': 1.0, 'focal': 1.0}},
-                {'name': 'cozy', 'bias': {'symmetry': 0.95, 'spacing': 0.92, 'decor': 1.35, 'clear_path': 0.95, 'focal': 1.05}},
-                {'name': 'minimal', 'bias': {'symmetry': 1.05, 'spacing': 1.18, 'decor': 0.55, 'clear_path': 1.2, 'focal': 0.9}},
-                {'name': 'workflow', 'bias': {'symmetry': 0.9, 'spacing': 1.0, 'decor': 0.7, 'clear_path': 1.25, 'focal': 1.0}},
+                {'name': 'balanced_symmetry', 'bias': {'symmetry': 1.35, 'spacing': 1.0, 'decor': 0.45, 'clear_path': 1.0, 'focal': 1.0}},
+                {'name': 'cozy', 'bias': {'symmetry': 0.95, 'spacing': 0.92, 'decor': 0.7, 'clear_path': 0.95, 'focal': 1.05}},
+                {'name': 'minimal', 'bias': {'symmetry': 1.05, 'spacing': 1.18, 'decor': 0.25, 'clear_path': 1.2, 'focal': 0.9}},
+                {'name': 'workflow', 'bias': {'symmetry': 0.9, 'spacing': 1.0, 'decor': 0.35, 'clear_path': 1.25, 'focal': 1.0}},
             ]
         if room_type in {'living_room', 'livingroom'}:
             return [
-                {'name': 'balanced_symmetry', 'bias': {'symmetry': 1.3, 'spacing': 1.0, 'decor': 0.95, 'clear_path': 1.0, 'focal': 1.05}},
-                {'name': 'cozy', 'bias': {'symmetry': 0.9, 'spacing': 0.92, 'decor': 1.3, 'clear_path': 0.95, 'focal': 1.1}},
-                {'name': 'minimal', 'bias': {'symmetry': 1.0, 'spacing': 1.15, 'decor': 0.55, 'clear_path': 1.2, 'focal': 0.95}},
-                {'name': 'workflow', 'bias': {'symmetry': 0.85, 'spacing': 1.05, 'decor': 0.75, 'clear_path': 1.25, 'focal': 1.0}},
+                {'name': 'balanced_symmetry', 'bias': {'symmetry': 1.3, 'spacing': 1.0, 'decor': 0.7, 'clear_path': 1.0, 'focal': 1.05}},
+                {'name': 'cozy', 'bias': {'symmetry': 0.9, 'spacing': 0.92, 'decor': 0.95, 'clear_path': 0.95, 'focal': 1.1}},
+                {'name': 'minimal', 'bias': {'symmetry': 1.0, 'spacing': 1.15, 'decor': 0.3, 'clear_path': 1.2, 'focal': 0.95}},
+                {'name': 'workflow', 'bias': {'symmetry': 0.85, 'spacing': 1.05, 'decor': 0.45, 'clear_path': 1.25, 'focal': 1.0}},
             ]
         if room_type == 'kitchen':
             return [
@@ -729,19 +731,44 @@ class HybridInteriorRuntimeV2:
         if cat not in TOP_SURFACE:
             return 1.0
         room_type = self._room_type(room)
-        room_has_support = room_type in {'bedroom', 'living_room', 'livingroom', 'kitchen', 'bathroom'}
-        if not room_has_support:
+        supported_by_room = {
+            'bedroom': {'nightstand', 'desk', 'wardrobe', 'cabinet', 'shelf'},
+            'living_room': {'coffee_table', 'tv_stand', 'cabinet', 'shelf'},
+            'livingroom': {'coffee_table', 'tv_stand', 'cabinet', 'shelf'},
+            'kitchen': {'counter', 'dining_table'},
+            'bathroom': {'counter', 'cabinet', 'shelf'},
+        }.get(room_type, set())
+        if not supported_by_room:
             return 0.15
         score = 0.45
-        if room_type == 'bedroom':
-            score += 0.25 if any(c in {'nightstand', 'desk', 'wardrobe', 'cabinet', 'shelf'} for c in ['nightstand', 'desk', 'wardrobe', 'cabinet', 'shelf']) else 0.0
-        if room_type in {'living_room', 'livingroom'}:
-            score += 0.25 if any(c in {'coffee_table', 'tv_stand', 'cabinet', 'shelf'} for c in ['coffee_table', 'tv_stand', 'cabinet', 'shelf']) else 0.0
-        if room_type == 'kitchen':
-            score += 0.3 if any(c in {'counter', 'dining_table'} for c in ['counter', 'dining_table']) else 0.0
-        if room_type == 'bathroom':
-            score += 0.25 if any(c in {'counter', 'cabinet', 'shelf'} for c in ['counter', 'cabinet', 'shelf']) else 0.0
+        score += 0.25 if supported_by_room else 0.0
+        if cat in {'lamp', 'decor', 'plant'} and room_type in {'bedroom', 'living_room', 'livingroom'}:
+            score += 0.05
         return round(min(1.0, score), 4)
+
+    def _allowed_layout_categories(self, room_type):
+        room_type = 'living_room' if room_type == 'livingroom' else room_type
+        allowed = {
+            'bedroom': {'bed', 'nightstand', 'rug', 'bench', 'wardrobe', 'cabinet', 'shelf', 'chair', 'armchair', 'lamp', 'mirror', 'decor', 'plant'},
+            'living_room': {'sofa', 'tv', 'tv_stand', 'coffee_table', 'rug', 'armchair', 'chair', 'side_table', 'cabinet', 'shelf', 'lamp', 'decor', 'plant', 'mirror'},
+            'kitchen': {'counter', 'sink', 'stove', 'fridge', 'dining_table', 'chair', 'cabinet', 'shelf', 'lamp'},
+            'bathroom': {'sink', 'toilet', 'bathtub', 'shower', 'mirror', 'cabinet', 'shelf', 'lamp'},
+        }
+        return allowed.get(room_type, {'sofa', 'chair', 'armchair', 'coffee_table', 'rug', 'lamp', 'decor', 'plant'})
+
+    def _layout_candidate_filter(self, room, products):
+        room_type = self._room_type(room)
+        allowed = self._allowed_layout_categories(room_type)
+        room_has_support = room_type in {'bedroom', 'living_room', 'livingroom', 'kitchen', 'bathroom'}
+        filtered = []
+        for p in products:
+            cat = self._canonical_category(p.get('category', 'unknown'))
+            if cat not in allowed:
+                continue
+            if cat in TOP_SURFACE and not room_has_support:
+                continue
+            filtered.append(p)
+        return filtered or products[:]
 
     def item_row(self, room, p):
         cat = self._canonical_category(p.get('category', 'unknown'))
@@ -1108,6 +1135,7 @@ class HybridInteriorRuntimeV2:
         return item
 
     def _make_candidates_from_transformer(self, room, selected, top_k):
+        selected = self._layout_candidate_filter(room, selected)
         template = self._template_layout(room, selected)
         base = template or self.transformer_layout(room, selected)
         if not base:
@@ -1307,6 +1335,7 @@ class HybridInteriorRuntimeV2:
     def generate_layout(self, payload):
         room = payload.get('room', {})
         products = payload.get('products') or payload.get('items') or []
+        products = self._layout_candidate_filter(room, products)
         opts = payload.get('options', {})
         min_score = float(opts.get('minScore', .35))
         top_k = int(opts.get('topK', 8))
