@@ -6,6 +6,7 @@ CEILING_CATEGORIES = {'ceiling_lamp', 'hanging_planter'}
 FLOOR_UNDER_CATEGORIES = {'rug'}
 SUPPORTER_CATEGORIES = {'coffee_table', 'dining_table', 'desk', 'nightstand', 'cabinet', 'shelf', 'tv_stand', 'counter'}
 NEEDS_SUPPORT_CATEGORIES = {'tv', 'vase', 'book', 'decor', 'lamp', 'plant', 'hanging_planter', 'wall_vase'}
+TOP_SURFACE_CATEGORIES = {'tv', 'vase', 'book', 'decor', 'lamp', 'plant'}
 
 
 CATEGORY_ALIASES = {
@@ -214,14 +215,8 @@ def fast_solve_layout(room, raw_items):
         if cat in NEEDS_SUPPORT_CATEGORIES and it.get('layer') != 'wall':
             sup = find_support(it, items)
             if sup is None:
-                if cat in {'vase', 'plant'}:
-                    it['layer'] = 'floor'
-                    it['x'] = float(room.get('widthM', 4)) / 2
-                    it['z'] = float(room.get('lengthM', 5)) / 2
-                    it['y'] = .0
-                else:
-                    it['rejectReason'] = 'needs_support_but_no_valid_supporter'
-                    rejected.append(it)
+                it['rejectReason'] = 'needs_support_but_no_valid_supporter'
+                rejected.append(it)
             else:
                 it['x'] = sup.get('x', 0)
                 it['z'] = sup.get('z', 0)

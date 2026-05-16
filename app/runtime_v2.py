@@ -18,8 +18,9 @@ NEEDS_SUPPORT = {'tv','vase','book','decor','lamp','plant'}
 WALL = {'wall_art','mirror','curtain','window','door','wall_planter','hanging_planter'}
 CEILING = {'ceiling_lamp'}
 UNDER = {'rug'}
+TOP_SURFACE = {'tv','vase','book','decor','lamp','plant'}
 LAYER = {c:'floor' for c in CATEGORIES}
-for c in ['tv','vase','book','decor','lamp','plant']: LAYER[c] = 'top_surface'
+for c in TOP_SURFACE: LAYER[c] = 'top_surface'
 for c in WALL: LAYER[c] = 'wall'
 for c in CEILING: LAYER[c] = 'ceiling'
 for c in UNDER: LAYER[c] = 'floor_under'
@@ -256,6 +257,9 @@ class HybridInteriorRuntimeV2:
                     penalty += 1.0
         return penalty
 
+    def _has_support_surface(self, items):
+        return any(safe(it.get('category')) in SUPPORTERS for it in items if it.get('layer') in {'floor', 'wall'})
+
     def _hard_validate_items(self, room, items):
         room_type = self._room_type(room)
         cats = {safe(it.get('category')) for it in items}
@@ -301,6 +305,8 @@ class HybridInteriorRuntimeV2:
                 reasons.append('missing_toilet_group')
             if not any(safe(it.get('category')) in {'bathtub', 'shower'} and it.get('placementZone') == 'corner' for it in items):
                 reasons.append('missing_bath_group')
+        if any(safe(it.get('category')) in TOP_SURFACE for it in items) and not self._has_support_surface(items):
+            reasons.append('missing_top_surface_support')
         return reasons
 
     def _composition_policy(self, room_type):
@@ -718,12 +724,32 @@ class HybridInteriorRuntimeV2:
         stoi = vocab.get('stoi', {}).get(group_name, {})
         return stoi.get(safe(value), stoi.get('unknown', 0))
 
+    def _support_score(self, room, p):
+        cat = self._canonical_category(p.get('category', 'unknown'))
+        if cat not in TOP_SURFACE:
+            return 1.0
+        room_type = self._room_type(room)
+        room_has_support = room_type in {'bedroom', 'living_room', 'livingroom', 'kitchen', 'bathroom'}
+        if not room_has_support:
+            return 0.15
+        score = 0.45
+        if room_type == 'bedroom':
+            score += 0.25 if any(c in {'nightstand', 'desk', 'wardrobe', 'cabinet', 'shelf'} for c in ['nightstand', 'desk', 'wardrobe', 'cabinet', 'shelf']) else 0.0
+        if room_type in {'living_room', 'livingroom'}:
+            score += 0.25 if any(c in {'coffee_table', 'tv_stand', 'cabinet', 'shelf'} for c in ['coffee_table', 'tv_stand', 'cabinet', 'shelf']) else 0.0
+        if room_type == 'kitchen':
+            score += 0.3 if any(c in {'counter', 'dining_table'} for c in ['counter', 'dining_table']) else 0.0
+        if room_type == 'bathroom':
+            score += 0.25 if any(c in {'counter', 'cabinet', 'shelf'} for c in ['counter', 'cabinet', 'shelf']) else 0.0
+        return round(min(1.0, score), 4)
+
     def item_row(self, room, p):
         cat = self._canonical_category(p.get('category', 'unknown'))
         f = fp(p)
         rw = float(room.get('widthM', 4)); rl = float(room.get('lengthM', 5)); rh = float(room.get('heightM', 2.8))
         area = max(rw * rl, 1e-6)
         obj_area = f['widthM'] * f['depthM']
+        support_score = self._support_score(room, p)
         return {
             'room_type': safe(room.get('type', room.get('room_type', 'unknown'))),
             'style': safe(room.get('style', 'unknown')),
@@ -756,6 +782,7 @@ class HybridInteriorRuntimeV2:
             'is_wall_object': float(cat in WALL),
             'is_floor_under': float(cat in UNDER),
             'support_surface_area_norm': 1.0 if cat in SUPPORTERS else 0.0,
+            'support_match_score': support_score,
             'nearest_wall_distance_norm': 0.0,
             'on': 0.0, 'supported_by': 0.0, 'supports': 0.0, 'under': 0.0, 'near': 0.0,
             'against_wall': 0.0, 'wall_attached': 0.0, 'facing': 0.0, 'same_group': 0.0,
