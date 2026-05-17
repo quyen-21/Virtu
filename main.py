@@ -4,15 +4,15 @@ import traceback
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-# Importing bedroom_variants_patch installs:
+# Importing small_room_capacity_patch installs:
 # - base engine patches
 # - quality fixes for aliases, product units, ceiling lamps, scoring caps
 # - living room semantic role mapping and placement refinement
-# - bedroom role-specific placement refinement
 # - bedroom multi-variant generation and scoring
-from layout_engine.bedroom_variants_patch import finalize_layout, model_patch_status
+# - small room product capacity rule for rooms under 10m²
+from layout_engine.small_room_capacity_patch import finalize_layout, model_patch_status
 
-app = FastAPI(title="VirtuSpace AI Layout Service", version="2.6.0")
+app = FastAPI(title="VirtuSpace AI Layout Service", version="2.7.0")
 
 
 @app.get("/health")
@@ -25,7 +25,7 @@ def health():
     return {
         "ok": True,
         "service": "layout_only",
-        "version": "2.6.0",
+        "version": "2.7.0",
         "availableEndpoints": [
             "POST /api/ai/layout/generate",
             "POST /api/ai/layout/generate-debug",
