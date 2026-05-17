@@ -19,12 +19,12 @@ bash start.sh
 GET /health
 ```
 
-Expected important fields after the bedroom variant patch:
+Expected important fields after the small-room capacity patch:
 
 ```json
 {
   "service": "layout_only",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "removedEndpoints": ["POST /api/v1/recommend"],
   "patch": {
     "patchInstalled": true,
@@ -33,6 +33,8 @@ Expected important fields after the bedroom variant patch:
     "livingRoomLayoutRefinePatchInstalled": true,
     "bedroomLayoutRefinePatchInstalled": true,
     "bedroomVariantsPatchInstalled": true,
+    "smallRoomCapacityPatchInstalled": true,
+    "smallRoomCapacityRule": "area_under_10m2_density_safe_cap_v1",
     "dimensionNormalization": "product_cm_mm_to_m_v2",
     "categoryAliasPatch": "vi_furniture_aliases_v2",
     "semanticRoleMapping": "console_side_storage_to_coffee_table_tv_stand_v1",
@@ -119,6 +121,7 @@ recommendation JSON
   -> living-room semantic role mapping
   -> product cm/mm/m dimension normalization
   -> room-aware product selection
+  -> small-room capacity cap when area < 10m²
   -> template candidates
   -> trained LayoutTransformer candidate when model is available
   -> living-room role-specific placement refinement
@@ -180,5 +183,15 @@ recommendation JSON
 - Varies ceiling lamp modes: over bed, foot of bed, or room center.
 - Keeps original/model candidates as fallback, then lets Shapely repair and scoring choose the best layout.
 - Adds bedroom scoring signals for zone quality and avoids rewarding very empty large bedrooms.
+
+## Important fixes in v2.7.0
+
+- Adds small-room capacity cap when room area is under `10m²`.
+- If area is under `6m²`, keeps only 3–4 products depending on density.
+- If area is from `6m²` to under `10m²`, keeps about 4–6 products depending on density.
+- For `medium` or `dense`, the engine no longer blindly keeps many items; it caps total products and floor-heavy products separately.
+- Prioritizes essential products first, such as bed/sofa/desk/rug/mirror/light, depending on room type.
+- Rejects excess products with reasons like `small_room_area_total_capacity_exceeded` or `small_room_floor_capacity_exceeded`.
+- Adds metrics: `smallRoomCapacityPatchInstalled`, `smallRoomCapacityApplied`, and `smallRoomAreaM2`.
 
 Optional layout constraints can be sent through `constraints`, for example `doors`, `windows`, `walkways`, `reservedZones`, or `noPlaceZones`.
