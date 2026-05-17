@@ -19,12 +19,12 @@ bash start.sh
 GET /health
 ```
 
-Expected important fields after the bedroom refinement patch:
+Expected important fields after the bedroom variant patch:
 
 ```json
 {
   "service": "layout_only",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "removedEndpoints": ["POST /api/v1/recommend"],
   "patch": {
     "patchInstalled": true,
@@ -32,11 +32,13 @@ Expected important fields after the bedroom refinement patch:
     "livingRoomSemanticPatchInstalled": true,
     "livingRoomLayoutRefinePatchInstalled": true,
     "bedroomLayoutRefinePatchInstalled": true,
+    "bedroomVariantsPatchInstalled": true,
     "dimensionNormalization": "product_cm_mm_to_m_v2",
     "categoryAliasPatch": "vi_furniture_aliases_v2",
     "semanticRoleMapping": "console_side_storage_to_coffee_table_tv_stand_v1",
     "livingRoomRolePlacement": "role_specific_focal_wall_seating_group_v1",
     "bedroomRolePlacement": "bed_wall_nightstand_rug_bench_storage_v1",
+    "bedroomVariantGeneration": "multi_wall_zone_lamp_variants_v1",
     "scoreQualityCaps": true
   }
 }
@@ -121,9 +123,9 @@ recommendation JSON
   -> trained LayoutTransformer candidate when model is available
   -> living-room role-specific placement refinement
   -> bedroom role-specific placement refinement
-  -> ceiling lamp / secondary-zone postprocess
+  -> bedroom multi-variant generation
   -> Shapely collision/clearance repair
-  -> scoring/ranking with quality caps
+  -> scoring/ranking with quality caps and bedroom zone score
   -> best layout response
 ```
 
@@ -168,5 +170,15 @@ recommendation JSON
 - Centers ceiling lamps over the bed/room zone, avoiding the previous low/gương-overlap look.
 - Moves wardrobe/cabinet/bookshelf products to side wall or corner storage zones.
 - Places desk/vanity/loose chair as a secondary bedroom zone instead of leaving it floating.
+
+## Important fixes in v2.6.0
+
+- Adds bedroom multi-variant generation instead of forcing one fixed bedroom template.
+- Generates variants across different bed headboard walls: back, front, left, right when dimensions allow.
+- Generates centered and slightly offset bed positions for larger rooms.
+- Varies dressing/storage/reading zones so bedrooms do not all look identical.
+- Varies ceiling lamp modes: over bed, foot of bed, or room center.
+- Keeps original/model candidates as fallback, then lets Shapely repair and scoring choose the best layout.
+- Adds bedroom scoring signals for zone quality and avoids rewarding very empty large bedrooms.
 
 Optional layout constraints can be sent through `constraints`, for example `doors`, `windows`, `walkways`, `reservedZones`, or `noPlaceZones`.
