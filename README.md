@@ -19,20 +19,22 @@ bash start.sh
 GET /health
 ```
 
-Expected important fields after the semantic patch:
+Expected important fields after the living-room refinement patch:
 
 ```json
 {
   "service": "layout_only",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "removedEndpoints": ["POST /api/v1/recommend"],
   "patch": {
     "patchInstalled": true,
     "qualityPatchInstalled": true,
     "livingRoomSemanticPatchInstalled": true,
+    "livingRoomLayoutRefinePatchInstalled": true,
     "dimensionNormalization": "product_cm_mm_to_m_v2",
     "categoryAliasPatch": "vi_furniture_aliases_v2",
     "semanticRoleMapping": "console_side_storage_to_coffee_table_tv_stand_v1",
+    "livingRoomRolePlacement": "role_specific_focal_wall_seating_group_v1",
     "scoreQualityCaps": true
   }
 }
@@ -115,6 +117,7 @@ recommendation JSON
   -> room-aware product selection
   -> template candidates
   -> trained LayoutTransformer candidate when model is available
+  -> living-room role-specific placement refinement
   -> ceiling lamp / secondary-zone postprocess
   -> Shapely collision/clearance repair
   -> scoring/ranking with quality caps
@@ -139,5 +142,16 @@ recommendation JSON
   - `Kệ phòng khách` / `Tủ trưng bày` -> `bookshelf` or `tv_stand` depending on size.
   - `Tủ lưu trữ` / `Hộc kéo` -> `cabinet` or fallback `tv_stand` only when low and long enough.
 - Removes confusing rejected entries for products that were re-used by semantic role mapping.
+
+## Important fixes in v2.4.0
+
+- Refines living-room placement by role after semantic mapping.
+- Keeps `tv_stand` / console / low media cabinet against the focal wall.
+- Places sofa opposite the focal wall and centers it on the main viewing axis.
+- Places `coffee_table` between sofa and focal wall; tall/long console is no longer allowed to behave like a coffee table.
+- Places armchairs diagonally around the coffee table to create a conversational seating group.
+- Moves side tables to sofa ends instead of letting them occupy the center.
+- Moves bookshelves/display shelves to side walls.
+- Moves small cabinets/drawers to wall/corner zones instead of leaving them floating alone.
 
 Optional layout constraints can be sent through `constraints`, for example `doors`, `windows`, `walkways`, `reservedZones`, or `noPlaceZones`.
