@@ -19,18 +19,20 @@ bash start.sh
 GET /health
 ```
 
-Expected important fields after the quality patch:
+Expected important fields after the semantic patch:
 
 ```json
 {
   "service": "layout_only",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "removedEndpoints": ["POST /api/v1/recommend"],
   "patch": {
     "patchInstalled": true,
     "qualityPatchInstalled": true,
+    "livingRoomSemanticPatchInstalled": true,
     "dimensionNormalization": "product_cm_mm_to_m_v2",
     "categoryAliasPatch": "vi_furniture_aliases_v2",
+    "semanticRoleMapping": "console_side_storage_to_coffee_table_tv_stand_v1",
     "scoreQualityCaps": true
   }
 }
@@ -107,9 +109,10 @@ The service uses a hybrid pipeline:
 ```text
 recommendation JSON
   -> normalize room/products
-  -> room-aware product selection
   -> Vietnamese category alias patch
+  -> living-room semantic role mapping
   -> product cm/mm/m dimension normalization
+  -> room-aware product selection
   -> template candidates
   -> trained LayoutTransformer candidate when model is available
   -> ceiling lamp / secondary-zone postprocess
@@ -126,5 +129,15 @@ recommendation JSON
 - Places `ceiling_lamp` on the ceiling instead of on nightstands.
 - Caps fake-high scores when essential living room items are missing or when a large/dense bedroom is too sparse.
 - Creates a secondary zone for large bedrooms, such as reading/storage/dressing zones.
+
+## Important fixes in v2.3.0
+
+- Adds underscore aliases such as `bàn_console`, `kệ_phòng_khách`, `tủ_lưu_trữ`, `hộc_kéo`, `sofa_góc`.
+- Maps living-room semantic roles when recommender returns related but non-exact categories:
+  - `Bàn bên` / suitable side table -> `coffee_table` when no real coffee table exists.
+  - `Bàn console` / low cabinet / living-room shelf -> `tv_stand` when no real TV stand exists.
+  - `Kệ phòng khách` / `Tủ trưng bày` -> `bookshelf` or `tv_stand` depending on size.
+  - `Tủ lưu trữ` / `Hộc kéo` -> `cabinet` or fallback `tv_stand` only when low and long enough.
+- Removes confusing rejected entries for products that were re-used by semantic role mapping.
 
 Optional layout constraints can be sent through `constraints`, for example `doors`, `windows`, `walkways`, `reservedZones`, or `noPlaceZones`.
