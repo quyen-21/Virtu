@@ -19,22 +19,24 @@ bash start.sh
 GET /health
 ```
 
-Expected important fields after the living-room refinement patch:
+Expected important fields after the bedroom refinement patch:
 
 ```json
 {
   "service": "layout_only",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "removedEndpoints": ["POST /api/v1/recommend"],
   "patch": {
     "patchInstalled": true,
     "qualityPatchInstalled": true,
     "livingRoomSemanticPatchInstalled": true,
     "livingRoomLayoutRefinePatchInstalled": true,
+    "bedroomLayoutRefinePatchInstalled": true,
     "dimensionNormalization": "product_cm_mm_to_m_v2",
     "categoryAliasPatch": "vi_furniture_aliases_v2",
     "semanticRoleMapping": "console_side_storage_to_coffee_table_tv_stand_v1",
     "livingRoomRolePlacement": "role_specific_focal_wall_seating_group_v1",
+    "bedroomRolePlacement": "bed_wall_nightstand_rug_bench_storage_v1",
     "scoreQualityCaps": true
   }
 }
@@ -118,6 +120,7 @@ recommendation JSON
   -> template candidates
   -> trained LayoutTransformer candidate when model is available
   -> living-room role-specific placement refinement
+  -> bedroom role-specific placement refinement
   -> ceiling lamp / secondary-zone postprocess
   -> Shapely collision/clearance repair
   -> scoring/ranking with quality caps
@@ -153,5 +156,17 @@ recommendation JSON
 - Moves side tables to sofa ends instead of letting them occupy the center.
 - Moves bookshelves/display shelves to side walls.
 - Moves small cabinets/drawers to wall/corner zones instead of leaving them floating alone.
+
+## Important fixes in v2.5.0
+
+- Adds bedroom role-specific placement refinement.
+- Anchors bed to the main wall and centers it as the bedroom focal object.
+- Places rug under the lower two-thirds of the bed.
+- Places nightstands symmetrically beside the bed head area.
+- Converts bench-like chair/stool products into a `bench` role and places them at the foot of the bed.
+- Moves mirror to a side wall as a dressing zone, away from the lamp/headboard axis.
+- Centers ceiling lamps over the bed/room zone, avoiding the previous low/gương-overlap look.
+- Moves wardrobe/cabinet/bookshelf products to side wall or corner storage zones.
+- Places desk/vanity/loose chair as a secondary bedroom zone instead of leaving it floating.
 
 Optional layout constraints can be sent through `constraints`, for example `doors`, `windows`, `walkways`, `reservedZones`, or `noPlaceZones`.
