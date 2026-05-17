@@ -20,8 +20,6 @@ The existing Shapely repair and score_layout pipeline still chooses the best
 candidate, so this patch adds diversity without removing collision protection.
 """
 
-from __future__ import annotations
-
 import copy
 import math
 from typing import Any, Dict, Iterable, List, Optional, Tuple
