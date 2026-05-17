@@ -4,37 +4,35 @@ import traceback
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-# Importing category_balanced_selection_patch installs:
-# - base engine patches
-# - quality fixes for aliases, product units, ceiling lamps, scoring caps
-# - living room semantic role mapping and placement refinement
-# - bedroom multi-variant generation and scoring
-# - small room product capacity rule for rooms under 10m²
-# - final 1-2 products/category quota by room, size, style, density
-# - category-balanced selection from the full recommendation pool
-from layout_engine.category_balanced_selection_patch import finalize_layout, model_patch_status
+from layout_engine.runtime import (
+    AVAILABLE_ENDPOINTS,
+    REMOVED_ENDPOINTS,
+    SERVICE_ROLE,
+    SERVICE_VERSION,
+    finalize_layout,
+    model_patch_status,
+)
 
-app = FastAPI(title="VirtuSpace AI Layout Service", version="2.9.0")
+app = FastAPI(title="VirtuSpace AI Layout Service", version=SERVICE_VERSION)
+
+
+def _safe_model_info() -> Dict[str, Any]:
+    try:
+        from inference import model_info
+        return model_info()
+    except Exception as exc:
+        return {"error": "model not loaded", "detail": str(exc)}
 
 
 @app.get("/health")
 def health():
-    try:
-        from inference import model_info
-        info = model_info()
-    except Exception as exc:
-        info = {"error": "model not loaded", "detail": str(exc)}
     return {
         "ok": True,
-        "service": "layout_only",
-        "version": "2.9.0",
-        "availableEndpoints": [
-            "POST /api/ai/layout/generate",
-            "POST /api/ai/layout/generate-debug",
-            "POST /api/ai/layout/generate-from-recommendation",
-        ],
-        "removedEndpoints": ["POST /api/v1/recommend"],
-        "model": info,
+        "service": SERVICE_ROLE,
+        "version": SERVICE_VERSION,
+        "availableEndpoints": AVAILABLE_ENDPOINTS,
+        "removedEndpoints": REMOVED_ENDPOINTS,
+        "model": _safe_model_info(),
         "patch": model_patch_status(),
     }
 
