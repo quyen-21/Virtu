@@ -4,10 +4,11 @@ import traceback
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-# Importing engine_patch installs runtime patches into layout_engine.engine.
-from layout_engine.engine_patch import finalize_layout, model_patch_status
+# Importing layout_quality_patch installs both base engine patches and
+# the quality fixes for aliases, product units, ceiling lamps, scoring caps.
+from layout_engine.layout_quality_patch import finalize_layout, model_patch_status
 
-app = FastAPI(title="VirtuSpace AI Layout Service", version="2.1.0")
+app = FastAPI(title="VirtuSpace AI Layout Service", version="2.2.0")
 
 
 @app.get("/health")
@@ -20,6 +21,7 @@ def health():
     return {
         "ok": True,
         "service": "layout_only",
+        "version": "2.2.0",
         "availableEndpoints": [
             "POST /api/ai/layout/generate",
             "POST /api/ai/layout/generate-debug",
