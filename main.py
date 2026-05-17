@@ -4,16 +4,17 @@ import traceback
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-# Importing category_density_quota_patch installs:
+# Importing category_balanced_selection_patch installs:
 # - base engine patches
 # - quality fixes for aliases, product units, ceiling lamps, scoring caps
 # - living room semantic role mapping and placement refinement
 # - bedroom multi-variant generation and scoring
 # - small room product capacity rule for rooms under 10m²
 # - final 1-2 products/category quota by room, size, style, density
-from layout_engine.category_density_quota_patch import finalize_layout, model_patch_status
+# - category-balanced selection from the full recommendation pool
+from layout_engine.category_balanced_selection_patch import finalize_layout, model_patch_status
 
-app = FastAPI(title="VirtuSpace AI Layout Service", version="2.8.0")
+app = FastAPI(title="VirtuSpace AI Layout Service", version="2.9.0")
 
 
 @app.get("/health")
@@ -26,7 +27,7 @@ def health():
     return {
         "ok": True,
         "service": "layout_only",
-        "version": "2.8.0",
+        "version": "2.9.0",
         "availableEndpoints": [
             "POST /api/ai/layout/generate",
             "POST /api/ai/layout/generate-debug",
