@@ -4,14 +4,14 @@ import traceback
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-# Importing living_room_layout_refine_patch installs:
+# Importing bedroom_layout_refine_patch installs:
 # - base engine patches
 # - quality fixes for aliases, product units, ceiling lamps, scoring caps
-# - living room semantic role mapping for console/side/storage/shelf products
-# - living room role-specific placement refinement
-from layout_engine.living_room_layout_refine_patch import finalize_layout, model_patch_status
+# - living room semantic role mapping and placement refinement
+# - bedroom role-specific placement refinement
+from layout_engine.bedroom_layout_refine_patch import finalize_layout, model_patch_status
 
-app = FastAPI(title="VirtuSpace AI Layout Service", version="2.4.0")
+app = FastAPI(title="VirtuSpace AI Layout Service", version="2.5.0")
 
 
 @app.get("/health")
@@ -24,7 +24,7 @@ def health():
     return {
         "ok": True,
         "service": "layout_only",
-        "version": "2.4.0",
+        "version": "2.5.0",
         "availableEndpoints": [
             "POST /api/ai/layout/generate",
             "POST /api/ai/layout/generate-debug",
